@@ -1,0 +1,185 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  ADMIN
+  ORDER_MANAGER
+  SHIPMENT_MANAGER
+  VIEWER
+}
+
+enum OrderStatus {
+  RECEIVED
+  READY_TO_SHIP
+  SHIPPED
+  CANCELLED
+}
+
+enum ShipmentStatus {
+  SHIPPED
+  CANCELLED
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUST
+  DISPOSE
+  REVERSE
+}
+
+model User {
+  id             String          @id @default(cuid())
+  loginId        String          @unique
+  email          String?         @unique
+  name           String
+  passwordHash   String
+  mustChangePassword Boolean      @default(false)
+  role           UserRole        @default(VIEWER)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  orders         Order[]         @relation("OrderCreatedBy")
+  shipments      Shipment[]      @relation("ShipmentShippedBy")
+  stockMovements StockMovement[]
+  auditLogs      AuditLog[]
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  entityType String
+  entityId   String?
+  description String
+  actorId    String
+  createdAt  DateTime @default(now())
+  actor      User     @relation(fields: [actorId], references: [id])
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
+
+model Allergen {
+  id         String         @id @default(cuid())
+  code       String         @unique
+  name       String
+  category   String?
+  minStock   Int            @default(0)
+  isActive   Boolean        @default(true)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  lots       ReagentLot[]
+  orderItems OrderItem[]
+
+  @@index([name])
+}
+
+model ReagentLot {
+  id             String          @id @default(cuid())
+  allergenId     String
+  lotNo          String
+  expirationDate DateTime
+  receivedDate   DateTime
+  initialQuantity Int
+  currentQuantity Int
+  memo           String?
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  allergen       Allergen        @relation(fields: [allergenId], references: [id])
+  shipmentItems  ShipmentItem[]
+  stockMovements StockMovement[]
+
+  @@unique([allergenId, lotNo, expirationDate])
+  @@index([lotNo])
+  @@index([expirationDate])
+  @@index([currentQuantity])
+}
+
+model Client {
+  id          String   @id @default(cuid())
+  name        String
+  managerName String?
+  phone       String?
+  address     String?
+  memo        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orders      Order[]
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  orderNo   String      @unique
+  clientId  String
+  status    OrderStatus @default(RECEIVED)
+  memo      String?
+  createdBy String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  client    Client      @relation(fields: [clientId], references: [id])
+  creator   User        @relation("OrderCreatedBy", fields: [createdBy], references: [id])
+  items     OrderItem[]
+  shipments Shipment[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  allergenId String
+  quantity   Int
+  order      Order    @relation(fields: [orderId], references: [id])
+  allergen   Allergen @relation(fields: [allergenId], references: [id])
+}
+
+model Shipment {
+  id        String           @id @default(cuid())
+  orderId   String
+  status    ShipmentStatus   @default(SHIPPED)
+  shippedBy String
+  shippedAt DateTime         @default(now())
+  memo      String?
+  order     Order            @relation(fields: [orderId], references: [id])
+  shipper   User             @relation("ShipmentShippedBy", fields: [shippedBy], references: [id])
+  items     ShipmentItem[]
+
+  @@index([shippedAt])
+}
+
+model ShipmentItem {
+  id           String     @id @default(cuid())
+  shipmentId   String
+  reagentLotId String
+  allergenId   String
+  quantity     Int
+  shipment     Shipment   @relation(fields: [shipmentId], references: [id])
+  reagentLot   ReagentLot @relation(fields: [reagentLotId], references: [id])
+}
+
+model StockMovement {
+  id           String            @id @default(cuid())
+  reagentLotId String
+  type         StockMovementType
+  quantity     Int
+  reason       String?
+  refType      String?
+  refId        String?
+  createdBy    String
+  createdAt    DateTime          @default(now())
+  reagentLot   ReagentLot        @relation(fields: [reagentLotId], references: [id])
+  creator      User              @relation(fields: [createdBy], references: [id])
+
+  @@index([createdAt])
+}
