@@ -1,16 +1,19 @@
 import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
-import { SubmitButton } from "../submit-button";
-import { adjustLotStock } from "./actions";
 import { formatDate, getLotRows, lotSourceLabel } from "./lot-data";
+import { StockAdjustmentDialog } from "./stock-adjustment-dialog";
+import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/access";
+import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
+import { TableSearch } from "../table-search";
 
 export const dynamic = "force-dynamic";
 
 export default async function LotsPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string; success?: string }>;
+  searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }>;
 }) {
-  const [user, lotRows, params] = await Promise.all([requireUser(), getLotRows(), searchParams]);
+  const params=await searchParams; const [user,data]=await Promise.all([requireUser(),getLotRows(parsePage(params?.page), params?.q?.trim())]); const lotRows=data.rows;
   const canWrite = can(user.role, "STOCK_WRITE");
   const error = params?.error;
   const success = params?.success;
@@ -25,6 +28,7 @@ export default async function LotsPage({
     >
       {error ? <div className="page-alert">{error}</div> : null}
       {success ? <div className="page-alert success">{success}</div> : null}
+      <TableSearch pathname="/lots" placeholder="시약명, 코드, 제조번호 검색" value={params?.q} />
       <Panel title="입고분 목록" note={`${lotSourceLabel(lotRows)} · 유통기한 빠른 순`}>
         <Table>
           <thead>
@@ -43,12 +47,12 @@ export default async function LotsPage({
           <tbody>
             {lotRows.map((lot) => (
               <tr key={lot.id}>
-                {canWrite ? <td>
+                <td>
                   <span className="stacked">
                     <strong>{lot.allergenName}</strong>
                     <small>{lot.allergenCode}</small>
                   </span>
-                </td> : null}
+                </td>
                 <td>{lot.lotNo}</td>
                 <td>{formatDate(lot.receivedDate)}</td>
                 <td>{formatDate(lot.expirationDate)}</td>
@@ -56,27 +60,15 @@ export default async function LotsPage({
                 <td>{lot.initialQuantity}</td>
                 <td>{lot.minStock ?? "-"}</td>
                 <td><StatusBadge status={lot.status} /></td>
-                <td>
-                  <form action={adjustLotStock} className="inline-adjust-form">
-                    <input name="lotId" type="hidden" value={lot.id} />
-                    <select disabled={lot.source !== "database"} name="type" title="조정 유형">
-                      <option value="ADJUST">조정</option>
-                      <option value="DISPOSE">폐기</option>
-                    </select>
-                    <input disabled={lot.source !== "database"} name="quantity" placeholder="+5 / -2" required />
-                    <input disabled={lot.source !== "database"} name="reason" placeholder="사유" required />
-                    <SubmitButton className="table-action" confirmMessage={`${lot.allergenName} ${lot.lotNo}의 재고 수량을 변경하시겠습니까? 변경 내역은 입출고 이력에 기록됩니다.`} disabled={lot.source !== "database"} pendingLabel="저장 중...">
-                      저장
-                    </SubmitButton>
-                  </form>
-                </td>
+                {canWrite ? <td>
+                  <StockAdjustmentDialog allergenCode={lot.allergenCode} allergenName={lot.allergenName} currentQuantity={lot.currentQuantity} disabled={lot.source !== "database"} expirationDate={formatDate(lot.expirationDate)} lotId={lot.id} lotNo={lot.lotNo} minStock={lot.minStock} />
+                </td> : null}
               </tr>
             ))}
           </tbody>
         </Table>
+        <Pagination page={data.page} pathname="/lots" preserve={{ q: params?.q }} total={data.total} totalPages={data.totalPages} />
       </Panel>
     </AppShell>
   );
 }
-import { requireUser } from "@/lib/auth";
-import { can } from "@/lib/access";

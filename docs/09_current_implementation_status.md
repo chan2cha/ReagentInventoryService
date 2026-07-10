@@ -30,6 +30,12 @@ The main operational workflow is implemented end to end:
 20. Track the full database schema through a Prisma baseline migration and deployment commands.
 21. Keep operational data readable across roles while exposing write controls only to assigned managers.
 22. Run isolated PostgreSQL integration tests without touching operational data.
+23. Page all operational and administration lists with database-level count/skip/take queries.
+24. Search operational and administration lists with database-level, case-insensitive partial matching.
+
+List pagination uses 20 rows per page and URL query parameters. Audit, movements, orders, lots, clients, allergens, and users use `page`; shipments preserve independent `ordersPage` and `historyPage` values for the two lists on the same screen.
+
+List search uses URL query parameters and remains active while paging. Shipments provide independent search terms for pending orders and shipment history.
 
 User-facing labels have been revised to use operator-friendly terms:
 
@@ -68,7 +74,8 @@ Important Supabase note:
 
 - The transaction pooler on `:6543` can cause Prisma prepared statement errors during writes and schema operations.
 - The session pooler on `:5432` worked reliably for schema push, seed, and read checks in this workspace.
-- Recommended for this project: use the Supabase session pooler for both `DATABASE_URL` and `DIRECT_URL` unless deployment requirements dictate otherwise.
+- Runtime `DATABASE_URL` uses the transaction pooler on `:6543` with `pgbouncer=true` and `connection_limit=1`.
+- Prisma migration and seed operations use `DIRECT_URL` with the session pooler on `:5432`.
 - Database query failures are logged with a screen-specific scope and propagated to the application error boundary.
 - Sample fallback is disabled by default and can never be enabled when `NODE_ENV=production`.
 - Empty database tables are shown as valid empty states, not labelled as sample data.
@@ -214,7 +221,9 @@ Files:
 Behavior:
 
 - Allows `ADMIN` and `SHIPMENT_MANAGER` users to adjust LOT stock from `/lots`.
-- Accepts signed adjustment quantities such as `+5` or `-2`.
+- Opens a row-specific adjustment dialog with explicit add, subtract, and disposal operations.
+- Accepts positive quantities only and previews the resulting stock before submission.
+- Warns when the result falls below minimum stock and blocks changes that would make stock negative.
 - Requires a reason.
 - Blocks changes that would make current quantity negative.
 - Updates `ReagentLot.currentQuantity`.

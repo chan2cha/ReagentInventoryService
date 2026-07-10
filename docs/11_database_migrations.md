@@ -44,7 +44,7 @@ Do not run `migrate resolve --applied` on a new empty database. A new database m
 ## Deployment Sequence
 
 1. Create or verify a database backup.
-2. Configure `DATABASE_URL` and `DIRECT_URL` with the Supabase session pooler.
+2. Configure runtime `DATABASE_URL` with the transaction pooler and `DIRECT_URL` with the session pooler.
 3. Run `npm run prisma:migrate:status`.
 4. Run `npm run prisma:migrate:deploy`.
 5. Run `npm run prisma:generate` during the application build.

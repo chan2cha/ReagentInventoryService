@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { daysUntilDateOnly } from "@/lib/date";
 import { findAllergen, formatDate, lotStatus, lots } from "../reagent-data";
+import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
 
 export type LotRow = {
   id: string;
@@ -59,19 +60,25 @@ function sampleLotRows(): LotRow[] {
     .sort((a, b) => a.expirationDate.localeCompare(b.expirationDate));
 }
 
-export async function getLotRows(): Promise<LotRow[]> {
+export async function getLotRows(page: number, q = ""): Promise<PaginatedResult<LotRow>> {
   try {
-    const dbLots = await prisma.reagentLot.findMany({
+    const where = q ? { OR: [
+      { lotNo: { contains: q, mode: "insensitive" as const } },
+      { allergen: { is: { name: { contains: q, mode: "insensitive" as const } } } },
+      { allergen: { is: { code: { contains: q, mode: "insensitive" as const } } } }
+    ] } : {};
+    const total=await prisma.reagentLot.count({ where }); const meta=pageMeta(page,total); const dbLots = await prisma.reagentLot.findMany({
+      where,
       include: {
         allergen: true
       },
       orderBy: [
         { expirationDate: "asc" },
         { lotNo: "asc" }
-      ]
+      ], skip:meta.skip, take:PAGE_SIZE
     });
 
-    return dbLots.map((lot) => ({
+    return { ...meta, rows: dbLots.map((lot) => ({
       id: lot.id,
       allergenName: lot.allergen.name,
       allergenCode: lot.allergen.code,
@@ -83,9 +90,9 @@ export async function getLotRows(): Promise<LotRow[]> {
       minStock: lot.allergen.minStock,
       status: statusFromDbLot(lot),
       source: "database"
-    }));
+    })) };
   } catch (error) {
-    return handleDataSourceError("lots", error, sampleLotRows);
+    return handleDataSourceError("lots", error, () => paginateRows(sampleLotRows(),page));
   }
 }
 

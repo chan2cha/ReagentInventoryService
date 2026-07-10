@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { nextStockQuantity, parseAdjustmentQuantity, type StockAdjustmentType } from "@/domain/stock-adjustment";
+import { nextStockQuantity, signedAdjustmentQuantity, type StockAdjustmentOperation } from "@/domain/stock-adjustment";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -19,8 +19,14 @@ export async function adjustLotStock(formData: FormData) {
   const lotId = formString(formData, "lotId");
   const quantityRaw = formString(formData, "quantity");
   const reason = formString(formData, "reason");
-  const typeRaw = formString(formData, "type");
-  const type = typeRaw === "DISPOSE" ? "DISPOSE" : "ADJUST" satisfies StockAdjustmentType;
+  const operationRaw = formString(formData, "operation");
+
+  if (!["ADD", "REMOVE", "DISPOSE"].includes(operationRaw)) {
+    fail("처리 유형을 선택하세요.");
+  }
+
+  const operation = operationRaw as StockAdjustmentOperation;
+  const type = operation === "DISPOSE" ? "DISPOSE" : "ADJUST";
 
   if (!lotId) {
     fail("조정할 입고분을 찾을 수 없습니다.");
@@ -33,9 +39,9 @@ export async function adjustLotStock(formData: FormData) {
   let quantity: number;
 
   try {
-    quantity = parseAdjustmentQuantity(quantityRaw);
+    quantity = signedAdjustmentQuantity(operation, quantityRaw);
   } catch {
-    fail("조정 수량은 0이 아닌 정수로 입력하세요. 예: +5, -2");
+    fail("변경 수량은 1 이상의 정수로 입력하세요.");
   }
 
   try {

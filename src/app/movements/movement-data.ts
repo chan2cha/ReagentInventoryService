@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { koreaDateKey } from "@/lib/date";
 import { findAllergen, formatDate, movements, type MovementType } from "../reagent-data";
+import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
 
 export type MovementRow = {
   id: string;
@@ -45,9 +46,17 @@ function sampleMovementRows(): MovementRow[] {
   });
 }
 
-export async function getMovementRows(): Promise<MovementRow[]> {
+export async function getMovementRows(page: number, q = ""): Promise<PaginatedResult<MovementRow>> {
   try {
+    const where = q ? { OR: [
+      { reason: { contains: q, mode: "insensitive" as const } },
+      { reagentLot: { is: { lotNo: { contains: q, mode: "insensitive" as const } } } },
+      { reagentLot: { is: { allergen: { is: { name: { contains: q, mode: "insensitive" as const } } } } } },
+      { reagentLot: { is: { allergen: { is: { code: { contains: q, mode: "insensitive" as const } } } } } }
+    ] } : {};
+    const total = await prisma.stockMovement.count({ where }); const meta = pageMeta(page, total);
     const dbMovements = await prisma.stockMovement.findMany({
+      where,
       include: {
         reagentLot: {
           include: {
@@ -57,10 +66,10 @@ export async function getMovementRows(): Promise<MovementRow[]> {
       },
       orderBy: {
         createdAt: "desc"
-      }
+      }, skip: meta.skip, take: PAGE_SIZE
     });
 
-    return dbMovements.map((movement) => ({
+    return { ...meta, rows: dbMovements.map((movement) => ({
       id: movement.id,
       date: koreaDateKey(movement.createdAt),
       type: mapMovementType(movement.type),
@@ -70,9 +79,9 @@ export async function getMovementRows(): Promise<MovementRow[]> {
       quantity: movement.quantity,
       memo: movement.reason ?? "-",
       source: "database"
-    }));
+    })) };
   } catch (error) {
-    return handleDataSourceError("movements", error, sampleMovementRows);
+    return handleDataSourceError("movements", error, () => paginateRows(sampleMovementRows(), page));
   }
 }
 

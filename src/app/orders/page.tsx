@@ -2,15 +2,19 @@ import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
 import { SubmitButton } from "../submit-button";
 import { cancelOrder } from "./actions";
 import { formatDate, getOrderRows, orderSourceLabel } from "./order-data";
+import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/access";
+import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
+import { TableSearch } from "../table-search";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrdersPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string; success?: string }>;
+  searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }>;
 }) {
-  const [user, orderRows, params] = await Promise.all([requireUser(), getOrderRows(), searchParams]);
+  const params = await searchParams; const [user, data] = await Promise.all([requireUser(), getOrderRows(parsePage(params?.page), params?.q?.trim())]); const orderRows = data.rows;
   const canWrite = can(user.role, "ORDER_WRITE");
   const error = params?.error;
   const success = params?.success;
@@ -25,6 +29,7 @@ export default async function OrdersPage({
     >
       {error ? <div className="page-alert">{error}</div> : null}
       {success ? <div className="page-alert success">{success}</div> : null}
+      <TableSearch pathname="/orders" placeholder="주문번호, 거래처, 시약, 메모 검색" value={params?.q} />
       <Panel title="주문 목록" note={`${orderSourceLabel(orderRows)} · 최근 주문 우선`}>
         <Table>
           <thead>
@@ -42,17 +47,17 @@ export default async function OrdersPage({
             {orderRows.map((order) => (
               <tr key={order.id}>
                 <td>{order.orderNo}</td>
-                {canWrite ? <td>
+                <td>
                   <span className="stacked">
                     <strong>{order.clientName}</strong>
                     <small>{order.clientManager}</small>
                   </span>
-                </td> : null}
+                </td>
                 <td>{formatDate(order.orderDate)}</td>
                 <td>{order.items}</td>
                 <td>{order.memo}</td>
                 <td><StatusBadge status={order.status} /></td>
-                <td>
+                {canWrite ? <td>
                   <form action={cancelOrder} className="inline-cancel-form">
                     <input name="orderId" type="hidden" value={order.id} />
                     <input aria-label="주문 취소 사유" name="reason" placeholder="취소 사유" required />
@@ -60,14 +65,13 @@ export default async function OrdersPage({
                       주문 취소
                     </SubmitButton>
                   </form>
-                </td>
+                </td> : null}
               </tr>
             ))}
           </tbody>
         </Table>
+        <Pagination page={data.page} pathname="/orders" preserve={{ q: params?.q }} total={data.total} totalPages={data.totalPages} />
       </Panel>
     </AppShell>
   );
 }
-import { requireUser } from "@/lib/auth";
-import { can } from "@/lib/access";

@@ -3,11 +3,14 @@ import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
 import { SubmitButton } from "../submit-button";
 import { createClient, toggleClientActive, updateClient } from "./actions";
 import { clientSourceLabel, getClientRows } from "./client-data";
+import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
+import { RegistrationDialog } from "../registration-dialog";
+import { TableSearch } from "../table-search";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClientsPage({ searchParams }: { searchParams?: Promise<{ error?: string; success?: string }> }) {
-  const [user, clientRows, params] = await Promise.all([requireUser(), getClientRows(), searchParams]);
+export default async function ClientsPage({ searchParams }: { searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }> }) {
+  const params=await searchParams; const [user,data]=await Promise.all([requireUser(),getClientRows(parsePage(params?.page), params?.q?.trim())]); const clientRows=data.rows;
   const canManage = user.role === "ADMIN";
 
   return (
@@ -15,7 +18,9 @@ export default async function ClientsPage({ searchParams }: { searchParams?: Pro
       {params?.error ? <div className="page-alert">{params.error}</div> : null}
       {params?.success ? <div className="page-alert success">{params.success}</div> : null}
 
-      <div className={canManage ? "form-layout master-data-layout" : undefined}>
+      {canManage ? <div className="page-toolbar"><RegistrationDialog title="거래처 등록" triggerLabel="거래처 등록"><form action={createClient} className="entry-form compact-entry-form"><label>거래처명<input name="name" placeholder="병원 또는 기관명" required /></label><label>담당자<input name="managerName" placeholder="선택 입력" /></label><label>연락처<input name="phone" placeholder="선택 입력" type="tel" /></label><label>주소<input name="address" placeholder="선택 입력" /></label><label>메모<textarea name="memo" placeholder="거래처 관련 참고사항" /></label><div className="form-actions"><SubmitButton className="primary-button" pendingLabel="등록 중...">등록</SubmitButton></div></form></RegistrationDialog></div> : null}
+      <TableSearch pathname="/clients" placeholder="거래처명, 담당자, 연락처, 주소 검색" value={params?.q} />
+      <div>
         <Panel title="거래처 목록" note={clientSourceLabel(clientRows)}>
           <Table>
             <thead><tr><th>거래처</th><th>담당자</th><th>연락처</th><th>주소</th><th>주문 수</th><th>상태</th>{canManage ? <th>관리</th> : null}</tr></thead>
@@ -46,17 +51,7 @@ export default async function ClientsPage({ searchParams }: { searchParams?: Pro
             </tbody>
           </Table>
         </Panel>
-
-        {canManage ? <Panel title="거래처 등록" note="관리자 전용">
-          <form action={createClient} className="entry-form compact-entry-form">
-            <label>거래처명<input name="name" placeholder="병원 또는 기관명" required /></label>
-            <label>담당자<input name="managerName" placeholder="선택 입력" /></label>
-            <label>연락처<input name="phone" placeholder="선택 입력" type="tel" /></label>
-            <label className="wide">주소<input name="address" placeholder="선택 입력" /></label>
-            <label className="wide">메모<textarea name="memo" placeholder="거래처 관련 참고사항" /></label>
-            <div className="form-actions"><SubmitButton className="primary-button" pendingLabel="등록 중...">거래처 등록</SubmitButton></div>
-          </form>
-        </Panel> : null}
+        <Pagination page={data.page} pathname="/clients" preserve={{ q: params?.q }} total={data.total} totalPages={data.totalPages} />
       </div>
     </AppShell>
   );

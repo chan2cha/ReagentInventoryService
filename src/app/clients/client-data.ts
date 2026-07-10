@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { clients } from "../reagent-data";
+import { PAGE_SIZE,pageMeta,paginateRows,type PaginatedResult } from "@/lib/pagination";
 
 export type ClientRow = {
   id: string;
@@ -38,9 +39,17 @@ function regionFromAddress(address: string | null) {
   return address.split(" ").slice(0, 2).join(" ");
 }
 
-export async function getClientRows(): Promise<ClientRow[]> {
+export async function getClientRows(page:number, q = ""): Promise<PaginatedResult<ClientRow>> {
   try {
-    const dbClients = await prisma.client.findMany({
+    const where = q ? { OR: [
+      { name: { contains: q, mode: "insensitive" as const } },
+      { managerName: { contains: q, mode: "insensitive" as const } },
+      { phone: { contains: q, mode: "insensitive" as const } },
+      { address: { contains: q, mode: "insensitive" as const } },
+      { memo: { contains: q, mode: "insensitive" as const } }
+    ] } : {};
+    const total=await prisma.client.count({ where }); const meta=pageMeta(page,total); const dbClients = await prisma.client.findMany({
+      where,
       include: {
         _count: {
           select: {
@@ -50,10 +59,10 @@ export async function getClientRows(): Promise<ClientRow[]> {
       },
       orderBy: {
         name: "asc"
-      }
+      },skip:meta.skip,take:PAGE_SIZE
     });
 
-    return dbClients.map((client) => ({
+    return {...meta,rows:dbClients.map((client) => ({
       id: client.id,
       name: client.name,
       manager: client.managerName ?? "-",
@@ -64,9 +73,9 @@ export async function getClientRows(): Promise<ClientRow[]> {
       active: client.isActive,
       orderCount: client._count.orders,
       source: "database"
-    }));
+    }))};
   } catch (error) {
-    return handleDataSourceError("clients", error, sampleClientRows);
+    return handleDataSourceError("clients", error,()=>paginateRows(sampleClientRows(),page));
   }
 }
 

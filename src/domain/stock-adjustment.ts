@@ -1,13 +1,14 @@
 export type StockAdjustmentType = "ADJUST" | "DISPOSE";
+export type StockAdjustmentOperation = "ADD" | "REMOVE" | "DISPOSE";
 
-export function parseAdjustmentQuantity(value: string) {
+export function signedAdjustmentQuantity(operation: StockAdjustmentOperation, value: string) {
   const quantity = Number.parseInt(value.trim(), 10);
 
-  if (!Number.isInteger(quantity) || quantity === 0) {
+  if (!Number.isInteger(quantity) || quantity <= 0) {
     throw new Error("ADJUSTMENT_QUANTITY_INVALID");
   }
 
-  return quantity;
+  return operation === "ADD" ? quantity : -quantity;
 }
 
 export function nextStockQuantity(currentQuantity: number, adjustmentQuantity: number) {

@@ -8,6 +8,7 @@ import {
   orders,
   type OrderStatus
 } from "../reagent-data";
+import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
 
 export type OrderRow = {
   id: string;
@@ -52,9 +53,18 @@ function mapOrderStatus(status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANC
   return map[status];
 }
 
-export async function getOrderRows(): Promise<OrderRow[]> {
+export async function getOrderRows(page: number, q = ""): Promise<PaginatedResult<OrderRow>> {
   try {
-    const dbOrders = await prisma.order.findMany({
+    const where = q ? { OR: [
+      { orderNo: { contains: q, mode: "insensitive" as const } },
+      { memo: { contains: q, mode: "insensitive" as const } },
+      { client: { is: { name: { contains: q, mode: "insensitive" as const } } } },
+      { client: { is: { managerName: { contains: q, mode: "insensitive" as const } } } },
+      { items: { some: { allergen: { is: { name: { contains: q, mode: "insensitive" as const } } } } } },
+      { items: { some: { allergen: { is: { code: { contains: q, mode: "insensitive" as const } } } } } }
+    ] } : {};
+    const total = await prisma.order.count({ where }); const meta = pageMeta(page, total); const dbOrders = await prisma.order.findMany({
+      where,
       include: {
         client: true,
         items: {
@@ -68,10 +78,10 @@ export async function getOrderRows(): Promise<OrderRow[]> {
       },
       orderBy: {
         createdAt: "desc"
-      }
+      }, skip: meta.skip, take: PAGE_SIZE
     });
 
-    return dbOrders.map((order) => ({
+    return { ...meta, rows: dbOrders.map((order) => ({
       id: order.id,
       orderNo: order.orderNo,
       clientName: order.client.name,
@@ -84,9 +94,9 @@ export async function getOrderRows(): Promise<OrderRow[]> {
       status: mapOrderStatus(order.status),
       canCancel: order.status === "RECEIVED" || order.status === "READY_TO_SHIP",
       source: "database"
-    }));
+    })) };
   } catch (error) {
-    return handleDataSourceError("orders", error, sampleOrderRows);
+    return handleDataSourceError("orders", error, () => paginateRows(sampleOrderRows(), page));
   }
 }
 

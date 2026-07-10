@@ -102,14 +102,11 @@ export async function AppShell({ active, title, description, action, actionHref,
         </nav>
 
         <div className="sidebar-footer">
-          <span>로그인 사용자</span>
           <strong>{user.name}</strong>
-          <small>{roleLabels[user.role]} · {formatDate(today)}</small>
-          {user.role === "ADMIN" ? (
+          <small>{roleLabels[user.role]}</small>
             <span className="database-status" title="현재 화면 정보를 데이터베이스에서 조회한 시각">
               <i /> 최신 정보 확인 · {formatKoreaDateTime()}
             </span>
-          ) : null}
           <form action={logout}>
             <button className="logout-button" type="submit">
               로그아웃

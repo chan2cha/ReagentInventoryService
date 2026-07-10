@@ -3,11 +3,13 @@ import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
 import { SubmitButton } from "../submit-button";
 import { createAllergen, toggleAllergenActive, updateAllergen } from "./actions";
 import { allergenSourceLabel, getAllergenRows } from "./allergen-data";
+import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
+import { TableSearch } from "../table-search";
 
 export const dynamic = "force-dynamic";
 
-export default async function AllergensPage({ searchParams }: { searchParams?: Promise<{ error?: string; success?: string }> }) {
-  const [user, allergenRows, params] = await Promise.all([requireUser(), getAllergenRows(), searchParams]);
+export default async function AllergensPage({ searchParams }: { searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }> }) {
+  const params=await searchParams; const [user,data]=await Promise.all([requireUser(),getAllergenRows(parsePage(params?.page), params?.q?.trim())]); const allergenRows=data.rows;
   const canManage = user.role === "ADMIN";
 
   return (
@@ -15,6 +17,7 @@ export default async function AllergensPage({ searchParams }: { searchParams?: P
       {params?.error ? <div className="page-alert">{params.error}</div> : null}
       {params?.success ? <div className="page-alert success">{params.success}</div> : null}
 
+      <TableSearch pathname="/allergens" placeholder="시약 코드, 시약명, 분류 검색" value={params?.q} />
       <div className={canManage ? "form-layout master-data-layout" : undefined}>
         <Panel title="시약 목록" note={allergenSourceLabel(allergenRows)}>
           <Table>
@@ -58,6 +61,7 @@ export default async function AllergensPage({ searchParams }: { searchParams?: P
             </tbody>
           </Table>
         </Panel>
+        <Pagination page={data.page} pathname="/allergens" preserve={{ q: params?.q }} total={data.total} totalPages={data.totalPages} />
 
         {canManage ? <Panel title="시약 등록" note="관리자 전용">
           <form action={createAllergen} className="entry-form compact-entry-form">

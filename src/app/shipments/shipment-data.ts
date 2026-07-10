@@ -3,6 +3,7 @@ import { handleDataSourceError } from "@/lib/data-source";
 import { daysUntilDateOnly, koreaDateKey } from "@/lib/date";
 import { findAllergen, findClient, formatDate, lots, orderItemSummary, orders } from "../reagent-data";
 import { lotStatus, type LotStatus, type OrderStatus } from "../reagent-data";
+import { PAGE_SIZE,pageMeta,paginateRows,type PageMeta } from "@/lib/pagination";
 
 export type ShipmentOrderRow = {
   id: string;
@@ -100,19 +101,34 @@ function sampleRecommendedLots(): RecommendedLotRow[] {
     });
 }
 
-export async function getShipmentPageData(): Promise<{
+export async function getShipmentPageData(orderPage:number,historyPage:number,orderQ = "",historyQ = ""): Promise<{
   orders: ShipmentOrderRow[];
   recommendedLots: RecommendedLotRow[];
   shipmentHistory: ShipmentHistoryRow[];
+  orderMeta:PageMeta; historyMeta:PageMeta;
 }> {
   try {
+    const orderWhere = {
+      status: { in: ["RECEIVED", "READY_TO_SHIP"] as Array<"RECEIVED" | "READY_TO_SHIP"> },
+      ...(orderQ ? { OR: [
+        { orderNo: { contains: orderQ, mode: "insensitive" as const } },
+        { client: { is: { name: { contains: orderQ, mode: "insensitive" as const } } } },
+        { client: { is: { managerName: { contains: orderQ, mode: "insensitive" as const } } } },
+        { items: { some: { allergen: { is: { name: { contains: orderQ, mode: "insensitive" as const } } } } } },
+        { items: { some: { allergen: { is: { code: { contains: orderQ, mode: "insensitive" as const } } } } } }
+      ] } : {})
+    };
+    const historyWhere = historyQ ? { OR: [
+      { order: { is: { orderNo: { contains: historyQ, mode: "insensitive" as const } } } },
+      { order: { is: { client: { is: { name: { contains: historyQ, mode: "insensitive" as const } } } } } },
+      { items: { some: { reagentLot: { is: { allergen: { is: { name: { contains: historyQ, mode: "insensitive" as const } } } } } } } },
+      { items: { some: { reagentLot: { is: { allergen: { is: { code: { contains: historyQ, mode: "insensitive" as const } } } } } } } }
+    ] } : {};
+    const [orderTotal,historyTotal]=await Promise.all([prisma.order.count({where:orderWhere}),prisma.shipment.count({where:historyWhere})]);
+    const orderMeta=pageMeta(orderPage,orderTotal); const historyMeta=pageMeta(historyPage,historyTotal);
     const [dbOrders, dbLots, dbShipments] = await Promise.all([
       prisma.order.findMany({
-        where: {
-          status: {
-            in: ["RECEIVED", "READY_TO_SHIP"]
-          }
-        },
+        where: orderWhere,
         include: {
           client: true,
           items: {
@@ -123,7 +139,7 @@ export async function getShipmentPageData(): Promise<{
         },
         orderBy: {
           createdAt: "asc"
-        }
+        },skip:orderMeta.skip,take:PAGE_SIZE
       }),
       prisma.reagentLot.findMany({
         where: {
@@ -142,6 +158,7 @@ export async function getShipmentPageData(): Promise<{
         take: 5
       }),
       prisma.shipment.findMany({
+        where: historyWhere,
         include: {
           order: {
             include: {
@@ -161,11 +178,12 @@ export async function getShipmentPageData(): Promise<{
         orderBy: {
           shippedAt: "desc"
         },
-        take: 8
+        skip:historyMeta.skip,take:PAGE_SIZE
       })
     ]);
 
     return {
+      orderMeta,historyMeta,
       orders: dbOrders.map((order) => ({
         id: order.id,
         orderNo: order.orderNo,
@@ -200,11 +218,11 @@ export async function getShipmentPageData(): Promise<{
       }))
     };
   } catch (error) {
-    return handleDataSourceError("shipments", error, () => ({
-      orders: sampleShipmentOrders(),
+    return handleDataSourceError("shipments", error, () => { const orderData=paginateRows(sampleShipmentOrders(),orderPage); const historyData=paginateRows<ShipmentHistoryRow>([],historyPage); return ({
+      orders: orderData.rows, orderMeta:orderData,
       recommendedLots: sampleRecommendedLots(),
-      shipmentHistory: []
-    }));
+      shipmentHistory: historyData.rows, historyMeta:historyData
+    });});
   }
 }
 

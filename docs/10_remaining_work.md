@@ -78,7 +78,8 @@ Current state:
 
 - `/lots` supports LOT-level stock adjustment.
 - `ADMIN` and `SHIPMENT_MANAGER` users can adjust stock.
-- Signed quantities such as `+5` and `-2` are accepted.
+- A row-specific dialog separates add, subtract, and disposal operations and accepts positive quantities only.
+- The dialog previews resulting stock, warns below minimum stock, and blocks negative results.
 - A reason is required.
 - Negative resulting stock is blocked.
 - `StockMovement` records are created with `ADJUST` or `DISPOSE`.

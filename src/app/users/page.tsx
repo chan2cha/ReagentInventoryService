@@ -3,20 +3,20 @@ import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
 import { SubmitButton } from "../submit-button";
 import { createUser, resetUserPassword, toggleUserActive } from "./actions";
 import { getUserRows, roleOptions } from "./user-data";
+import { RegistrationDialog } from "../registration-dialog";
+import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
+import { TableSearch } from "../table-search";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string; success?: string }>;
+  searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }>;
 }) {
   await requirePageRole(["ADMIN"]);
 
-  const [users, params] = await Promise.all([
-    getUserRows(),
-    searchParams
-  ]);
+  const params=await searchParams; const data=await getUserRows(parsePage(params?.page), params?.q?.trim()); const users=data.rows;
   const error = params?.error;
   const success = params?.success;
 
@@ -29,7 +29,9 @@ export default async function UsersPage({
       {error ? <div className="page-alert">{error}</div> : null}
       {success ? <div className="page-alert success">{success}</div> : null}
 
-      <div className="form-layout users-layout">
+      <div className="page-toolbar"><RegistrationDialog title="사용자 등록" triggerLabel="사용자 등록"><form action={createUser} className="entry-form compact-entry-form"><label>아이디<input name="loginId" placeholder="예: order01" required /></label><label>이름<input name="name" placeholder="사용자 이름" required /></label><label>임시 비밀번호<input minLength={8} name="password" placeholder="8자 이상" required type="password" /></label><label>역할<select defaultValue="VIEWER" name="role" required>{roleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></label><label>이메일<input name="email" placeholder="선택 입력" type="email" /></label><div className="form-actions"><SubmitButton className="primary-button" pendingLabel="등록 중...">등록</SubmitButton></div></form></RegistrationDialog></div>
+      <TableSearch pathname="/users" placeholder="아이디, 이름, 이메일 검색" value={params?.q} />
+      <div>
         <Panel title="사용자 목록" note={`${users.length}명`}>
           <Table>
             <thead>
@@ -77,42 +79,8 @@ export default async function UsersPage({
             </tbody>
           </Table>
         </Panel>
+        <Pagination page={data.page} pathname="/users" preserve={{ q: params?.q }} total={data.total} totalPages={data.totalPages} />
 
-        <Panel title="사용자 등록" note="관리자 전용">
-          <form action={createUser} className="entry-form compact-entry-form">
-            <label>
-              아이디
-              <input name="loginId" placeholder="예: order01" required />
-            </label>
-            <label>
-              이름
-              <input name="name" placeholder="사용자 이름" required />
-            </label>
-            <label>
-              임시 비밀번호
-              <input minLength={8} name="password" placeholder="8자 이상" required type="password" />
-            </label>
-            <label>
-              역할
-              <select defaultValue="VIEWER" name="role" required>
-                {roleOptions.map((role) => (
-                  <option key={role.value} value={role.value}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="wide">
-              이메일
-              <input name="email" placeholder="선택 입력" type="email" />
-            </label>
-            <div className="form-actions">
-              <SubmitButton className="primary-button" pendingLabel="등록 중...">
-                사용자 등록
-              </SubmitButton>
-            </div>
-          </form>
-        </Panel>
       </div>
     </AppShell>
   );

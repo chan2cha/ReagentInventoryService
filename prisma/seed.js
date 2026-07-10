@@ -1,17 +1,9 @@
 const { PrismaClient } = require("@prisma/client");
 
-function sessionPoolerUrl(url) {
-  if (!url) {
-    return url;
-  }
-
-  return url.replace(":6543", ":5432");
-}
-
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: sessionPoolerUrl(process.env.DATABASE_URL)
+      url: process.env.DIRECT_URL || process.env.DATABASE_URL
     }
   }
 });
