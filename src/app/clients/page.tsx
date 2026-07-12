@@ -29,21 +29,23 @@ export default async function ClientsPage({ searchParams }: { searchParams?: Pro
                 <tr key={client.id}>
                   {canManage && client.source === "database" ? (
                     <td colSpan={4}>
-                      <form action={updateClient} className="table-edit-form client-edit-form" id={`client-${client.id}`}>
-                        <input name="clientId" type="hidden" value={client.id} />
-                        <input aria-label="거래처명" defaultValue={client.name} name="name" required />
-                        <input aria-label="담당자" defaultValue={client.manager === "-" ? "" : client.manager} name="managerName" />
-                        <input aria-label="연락처" defaultValue={client.phone === "-" ? "" : client.phone} name="phone" />
-                        <input aria-label="주소" defaultValue={client.address} name="address" />
-                        <input name="memo" type="hidden" value={client.memo} />
-                      </form>
+                      <div className="table-edit-form client-edit-form">
+                        <input aria-label="거래처명" defaultValue={client.name} form={`client-${client.id}`} name="name" required />
+                        <input aria-label="담당자" defaultValue={client.manager === "-" ? "" : client.manager} form={`client-${client.id}`} name="managerName" />
+                        <input aria-label="연락처" defaultValue={client.phone === "-" ? "" : client.phone} form={`client-${client.id}`} name="phone" />
+                        <input aria-label="주소" defaultValue={client.address} form={`client-${client.id}`} name="address" />
+                      </div>
                     </td>
                   ) : (
                     <><td>{client.name}</td><td>{client.manager}</td><td>{client.phone}</td><td>{client.address || "-"}</td></>
                   )}
                   <td>{client.orderCount}</td><td><StatusBadge status={client.active ? "정상" : "취소"} /></td>
                   {canManage ? <td><div className="table-actions">
-                    <SubmitButton className="table-action" form={`client-${client.id}`} pendingLabel="저장 중...">저장</SubmitButton>
+                    {client.source === "database" ? <form action={updateClient} id={`client-${client.id}`}>
+                      <input name="clientId" type="hidden" value={client.id} />
+                      <input name="memo" type="hidden" value={client.memo} />
+                      <SubmitButton className="table-action" pendingLabel="저장 중...">저장</SubmitButton>
+                    </form> : null}
                     <form action={toggleClientActive}><input name="clientId" type="hidden" value={client.id} /><SubmitButton className={client.active ? "table-action danger" : "table-action"} confirmMessage={`${client.name} 거래처를 ${client.active ? "비활성화" : "활성화"}하시겠습니까?`}>{client.active ? "비활성화" : "활성화"}</SubmitButton></form>
                   </div></td> : null}
                 </tr>

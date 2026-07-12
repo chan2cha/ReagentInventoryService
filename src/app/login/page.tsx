@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
+import { SubmitButton } from "@/app/submit-button";
 import { getCurrentUser } from "@/lib/auth";
 import { login } from "./actions";
 
@@ -50,9 +51,9 @@ export default async function LoginPage({
             비밀번호
             <input autoComplete="current-password" name="password" placeholder="비밀번호" required type="password" />
           </label>
-          <button className="primary-button" type="submit">
+          <SubmitButton className="primary-button" pendingLabel="로그인 중...">
             로그인
-          </button>
+          </SubmitButton>
         </form>
       </section>
     </main>

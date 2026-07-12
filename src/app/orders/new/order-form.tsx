@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { ProgressLink } from "@/app/progress-link";
 import {
   changeOrderDraftRowAllergen,
   changeOrderDraftRowQuantity,
@@ -236,9 +236,9 @@ export function OrderForm({ clients, allergens, templates, templateLoadFailed }:
             <strong id="order-template-heading">자주 쓰는 주문 세트</strong>
             <p>기준 세트는 하나만 선택할 수 있으며, 품목과 수량은 자유롭게 수정할 수 있습니다.</p>
           </div>
-          <Link className="order-template-manage-link" href={"/orders/templates" as never}>
+          <ProgressLink className="order-template-manage-link" href={"/orders/templates" as never}>
             세트 관리
-          </Link>
+          </ProgressLink>
         </div>
 
         {templateLoadFailed ? (
@@ -514,9 +514,9 @@ export function OrderForm({ clients, allergens, templates, templateLoadFailed }:
         <textarea name="memo" placeholder="주문 메모를 입력하세요" rows={4} />
       </label>
       <div className="form-actions">
-        <Link className="secondary-button" href={"/orders" as never}>
+        <ProgressLink className="secondary-button" href={"/orders" as never}>
           취소
-        </Link>
+        </ProgressLink>
         <SubmitButton className="primary-button" disabled={!canSubmit} pendingLabel="저장 중...">
           주문 저장
         </SubmitButton>

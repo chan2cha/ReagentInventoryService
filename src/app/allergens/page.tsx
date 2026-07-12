@@ -33,13 +33,12 @@ export default async function AllergensPage({ searchParams }: { searchParams?: P
                   {canManage && allergen.source === "database" ? (
                     <>
                       <td colSpan={4}>
-                        <form action={updateAllergen} className="table-edit-form allergen-edit-form" id={`allergen-${allergen.id}`}>
-                          <input name="allergenId" type="hidden" value={allergen.id} />
-                          <input aria-label="시약 코드" defaultValue={allergen.code} maxLength={30} name="code" required />
-                          <input aria-label="시약명" defaultValue={allergen.name} name="name" required />
-                          <input aria-label="분류" defaultValue={allergen.category === "-" ? "" : allergen.category} name="category" />
-                          <input aria-label="안전 수량" defaultValue={allergen.minStock ?? 0} min={0} name="minStock" required type="number" />
-                        </form>
+                        <div className="table-edit-form allergen-edit-form">
+                          <input aria-label="시약 코드" defaultValue={allergen.code} form={`allergen-${allergen.id}`} maxLength={30} name="code" required />
+                          <input aria-label="시약명" defaultValue={allergen.name} form={`allergen-${allergen.id}`} name="name" required />
+                          <input aria-label="분류" defaultValue={allergen.category === "-" ? "" : allergen.category} form={`allergen-${allergen.id}`} name="category" />
+                          <input aria-label="안전 수량" defaultValue={allergen.minStock ?? 0} form={`allergen-${allergen.id}`} min={0} name="minStock" required type="number" />
+                        </div>
                       </td>
                     </>
                   ) : (
@@ -49,7 +48,10 @@ export default async function AllergensPage({ searchParams }: { searchParams?: P
                   <td><StatusBadge status={allergen.active ? "정상" : "취소"} /></td>
                   {canManage ? (
                     <td><div className="table-actions">
-                      <SubmitButton className="table-action" form={`allergen-${allergen.id}`} pendingLabel="저장 중...">저장</SubmitButton>
+                      {allergen.source === "database" ? <form action={updateAllergen} id={`allergen-${allergen.id}`}>
+                        <input name="allergenId" type="hidden" value={allergen.id} />
+                        <SubmitButton className="table-action" pendingLabel="저장 중...">저장</SubmitButton>
+                      </form> : null}
                       <form action={toggleAllergenActive}>
                         <input name="allergenId" type="hidden" value={allergen.id} />
                         <SubmitButton className={allergen.active ? "table-action danger" : "table-action"} confirmMessage={`${allergen.name} 시약을 ${allergen.active ? "비활성화" : "활성화"}하시겠습니까?`}>{allergen.active ? "비활성화" : "활성화"}</SubmitButton>

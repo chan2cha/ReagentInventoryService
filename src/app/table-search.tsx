@@ -1,5 +1,8 @@
 import { RotateCcw, Search, SlidersHorizontal } from "lucide-react";
-import Link from "next/link";
+import type { Route } from "next";
+import Form from "next/form";
+import { ProgressLink } from "./progress-link";
+import { TableSearchSubmit } from "./table-search-submit";
 
 type TableSearchOption = {
   label: string;
@@ -17,7 +20,7 @@ type TableSearchProps = {
   description?: string;
   filter?: TableSearchFilter;
   paramName?: string;
-  pathname: string;
+  pathname: Route;
   placeholder: string;
   preserve?: Record<string, string | undefined>;
   title?: string;
@@ -48,11 +51,10 @@ export function TableSearch({
   const resetHref = resetQuery.size ? `${pathname}?${resetQuery}` : pathname;
 
   return (
-    <form
+    <Form
       action={pathname}
       aria-label={title}
       className={`table-search ${isExpanded ? "table-search-expanded" : "table-search-compact"}`}
-      method="get"
     >
       {Object.entries(preserve).map(([key, item]) => (
         item ? <input key={key} name={key} type="hidden" value={item} /> : null
@@ -70,10 +72,10 @@ export function TableSearch({
             </span>
           </div>
           {hasFilters ? (
-            <Link className="table-search-reset" href={resetHref as never}>
+            <ProgressLink className="table-search-reset" href={resetHref as never}>
               <RotateCcw aria-hidden="true" size={15} />
               <span>초기화</span>
-            </Link>
+            </ProgressLink>
           ) : null}
         </div>
       ) : null}
@@ -105,18 +107,15 @@ export function TableSearch({
           </label>
         ) : null}
 
-        <button className="table-search-submit" type="submit">
-          <Search aria-hidden="true" size={16} />
-          <span>검색</span>
-        </button>
+        <TableSearchSubmit />
 
         {!isExpanded && hasFilters ? (
-          <Link className="table-search-reset" href={resetHref as never}>
+          <ProgressLink className="table-search-reset" href={resetHref as never}>
             <RotateCcw aria-hidden="true" size={15} />
             <span>초기화</span>
-          </Link>
+          </ProgressLink>
         ) : null}
       </div>
-    </form>
+    </Form>
   );
 }

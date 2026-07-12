@@ -1,5 +1,6 @@
 "use client";
 
+import { LoaderCircle } from "lucide-react";
 import { useFormStatus } from "react-dom";
 
 type SubmitButtonProps = {
@@ -23,7 +24,8 @@ export function SubmitButton({
 
   return (
     <button
-      className={className}
+      aria-busy={pending}
+      className={["submit-button", className].filter(Boolean).join(" ")}
       disabled={disabled || pending}
       form={form}
       onClick={(event) => {
@@ -34,7 +36,10 @@ export function SubmitButton({
       }}
       type="submit"
     >
-      {pending ? pendingLabel : children}
+      {pending ? (
+        <LoaderCircle aria-hidden="true" className="submit-button-spinner" size={16} />
+      ) : null}
+      <span aria-live="polite">{pending ? pendingLabel : children}</span>
     </button>
   );
 }

@@ -1,4 +1,5 @@
 import { AppShell, Panel } from "@/app/reagent-ui";
+import { SubmitButton } from "@/app/submit-button";
 import { changePassword } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -34,9 +35,9 @@ export default async function PasswordPage({
               <input autoComplete="new-password" minLength={8} name="confirmPassword" required type="password" />
             </label>
             <div className="form-actions">
-              <button className="primary-button" type="submit">
+              <SubmitButton className="primary-button" pendingLabel="변경 중...">
                 비밀번호 저장
-              </button>
+              </SubmitButton>
             </div>
           </form>
         </Panel>

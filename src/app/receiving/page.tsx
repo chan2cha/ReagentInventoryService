@@ -1,4 +1,5 @@
 import { AppShell, Panel } from "../reagent-ui";
+import { SubmitButton } from "../submit-button";
 import { createReceivingLot } from "./actions";
 import { getReceivingAllergens, receivingSourceLabel } from "./receiving-data";
 import { koreaDateKey } from "@/lib/date";
@@ -61,9 +62,9 @@ export default async function ReceivingPage({
               <textarea name="memo" placeholder="검수 메모를 입력하세요" rows={4} />
             </label>
             <div className="form-actions">
-              <button className="primary-button" disabled={!canSubmit} type="submit">
+              <SubmitButton className="primary-button" disabled={!canSubmit} pendingLabel="저장 중...">
                 입고 저장
-              </button>
+              </SubmitButton>
             </div>
           </form>
         </Panel>

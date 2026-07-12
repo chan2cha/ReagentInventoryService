@@ -1,4 +1,3 @@
-import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import {
@@ -22,7 +21,9 @@ import { requireUser } from "@/lib/auth";
 import { can, type Capability } from "@/lib/access";
 import { formatKoreaDateTime } from "@/lib/date";
 import type { StockMovementLabel } from "@/domain/stock-movement-presentation";
+import { ProgressLink } from "./progress-link";
 import { formatSidebarBadge, getSidebarData } from "./sidebar-data";
+import { SubmitButton } from "./submit-button";
 import {
   dashboard,
   findAllergen,
@@ -85,19 +86,19 @@ export async function AppShell({ active, title, description, action, actionHref,
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
-        <Link className="brand-block" href="/">
+        <ProgressLink className="brand-block" href="/">
           <Image alt="신영라파마" height={48} priority src="/logo.png" width={177} />
           <span>
             <strong>시약 재고 관리 시스템</strong>
             <small>SHINYOUNG Lofarma</small>
           </span>
-        </Link>
+        </ProgressLink>
 
         <nav className="side-nav" aria-label="메뉴">
           {navItems.filter((item) => !item.capability || can(user.role, item.capability)).map((item) => {
             const Icon = item.icon;
             return (
-              <Link
+              <ProgressLink
                 className={item.href === active ? "active" : ""}
                 href={item.href as never}
                 key={item.href}
@@ -112,7 +113,7 @@ export async function AppShell({ active, title, description, action, actionHref,
                     {pendingShipmentBadge}
                   </em>
                 ) : null}
-              </Link>
+              </ProgressLink>
             );
           })}
         </nav>
@@ -120,13 +121,13 @@ export async function AppShell({ active, title, description, action, actionHref,
         <div className="sidebar-footer">
           <strong>{user.name}</strong>
           <small>{roleLabels[user.role]}</small>
-            <span className="database-status" title="현재 화면 정보를 데이터베이스에서 조회한 시각">
-              <i /> 최신 정보 확인 · {formatKoreaDateTime()}
-            </span>
+          <span className="database-status" title="현재 화면 정보를 데이터베이스에서 조회한 시각">
+            <i /> 최신 정보 확인 · {formatKoreaDateTime()}
+          </span>
           <form action={logout}>
-            <button className="logout-button" type="submit">
+            <SubmitButton className="logout-button" pendingLabel="로그아웃 중...">
               로그아웃
-            </button>
+            </SubmitButton>
           </form>
         </div>
       </aside>
@@ -139,7 +140,7 @@ export async function AppShell({ active, title, description, action, actionHref,
             <p>{description}</p>
           </div>
           {action && actionHref ? (
-            <Link className="primary-button" href={actionHref as never}>{action}</Link>
+            <ProgressLink className="primary-button" href={actionHref as never}>{action}</ProgressLink>
           ) : null}
           {action && !actionHref ? <button className="primary-button" type="button">{action}</button> : null}
         </header>
