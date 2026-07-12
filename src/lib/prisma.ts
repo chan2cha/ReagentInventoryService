@@ -15,13 +15,23 @@ export function runtimeDatabaseUrl(url: string | undefined) {
   return `${url}${url.includes("?") ? "&" : "?"}${additions.join("&")}`;
 }
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  datasources: {
-    db: {
-      url: runtimeDatabaseUrl(process.env.DATABASE_URL)
-    }
+function createPrismaClient() {
+  const url = runtimeDatabaseUrl(process.env.DATABASE_URL);
+
+  if (!url) {
+    return new PrismaClient();
   }
-});
+
+  return new PrismaClient({
+    datasources: {
+      db: {
+        url
+      }
+    }
+  });
+}
+
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;

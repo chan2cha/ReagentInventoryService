@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
-import { daysUntilDateOnly, koreaDateKey } from "@/lib/date";
+import { addDateOnlyDays, dateOnlyUtc, daysUntilDateOnly, koreaDateKey } from "@/lib/date";
 import { findAllergen, findClient, formatDate, lots, orderItemSummary, orders } from "../reagent-data";
 import { lotStatus, type LotStatus, type OrderStatus } from "../reagent-data";
 import { PAGE_SIZE,pageMeta,paginateRows,type PageMeta } from "@/lib/pagination";
+import { pendingShipmentOrderWhere } from "@/domain/pending-shipment";
 
 export type ShipmentOrderRow = {
   id: string;
@@ -81,8 +82,10 @@ function sampleShipmentOrders(): ShipmentOrderRow[] {
 }
 
 function sampleRecommendedLots(): RecommendedLotRow[] {
+  const today = koreaDateKey();
+
   return lots
-    .filter((lot) => lot.quantity > 0)
+    .filter((lot) => lot.quantity > 0 && lot.receivedDate <= today && lot.expirationDate >= today)
     .sort((a, b) => a.expirationDate.localeCompare(b.expirationDate))
     .slice(0, 5)
     .map((lot) => {
@@ -108,8 +111,11 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
   orderMeta:PageMeta; historyMeta:PageMeta;
 }> {
   try {
+    const todayKey = koreaDateKey();
+    const today = dateOnlyUtc(todayKey);
+    const tomorrow = addDateOnlyDays(todayKey, 1);
     const orderWhere = {
-      status: { in: ["RECEIVED", "READY_TO_SHIP"] as Array<"RECEIVED" | "READY_TO_SHIP"> },
+      ...pendingShipmentOrderWhere(),
       ...(orderQ ? { OR: [
         { orderNo: { contains: orderQ, mode: "insensitive" as const } },
         { client: { is: { name: { contains: orderQ, mode: "insensitive" as const } } } },
@@ -145,6 +151,12 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
         where: {
           currentQuantity: {
             gt: 0
+          },
+          expirationDate: {
+            gte: today
+          },
+          receivedDate: {
+            lt: tomorrow
           },
           isActive: true
         },

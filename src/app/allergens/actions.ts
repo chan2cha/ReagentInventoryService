@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { buildActionMessageUrl } from "@/lib/action-message-url";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -11,7 +12,7 @@ function formString(formData: FormData, key: string) {
 }
 
 function fail(message: string): never {
-  redirect(`/allergens?error=${encodeURIComponent(message)}` as never);
+  redirect(buildActionMessageUrl("/allergens", "error", message) as never);
 }
 
 function minStockValue(formData: FormData) {
@@ -70,7 +71,7 @@ export async function createAllergen(formData: FormData) {
   }
 
   revalidateAllergenPaths();
-  redirect("/allergens?success=시약이 등록되었습니다." as never);
+  redirect(buildActionMessageUrl("/allergens", "success", "시약이 등록되었습니다.") as never);
 }
 
 export async function updateAllergen(formData: FormData) {
@@ -97,7 +98,7 @@ export async function updateAllergen(formData: FormData) {
   }
 
   revalidateAllergenPaths();
-  redirect("/allergens?success=시약 정보가 수정되었습니다." as never);
+  redirect(buildActionMessageUrl("/allergens", "success", "시약 정보가 수정되었습니다.") as never);
 }
 
 export async function toggleAllergenActive(formData: FormData) {
@@ -122,5 +123,5 @@ export async function toggleAllergenActive(formData: FormData) {
   }
 
   revalidateAllergenPaths();
-  redirect("/allergens?success=시약 상태가 변경되었습니다." as never);
+  redirect(buildActionMessageUrl("/allergens", "success", "시약 상태가 변경되었습니다.") as never);
 }

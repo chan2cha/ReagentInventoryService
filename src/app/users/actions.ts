@@ -3,6 +3,7 @@
 import type { UserRole } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { buildActionMessageUrl } from "@/lib/action-message-url";
 import { requireRole } from "@/lib/auth";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
@@ -15,7 +16,7 @@ function formString(formData: FormData, key: string) {
 }
 
 function fail(message: string): never {
-  redirect(`/users?error=${encodeURIComponent(message)}` as never);
+  redirect(buildActionMessageUrl("/users", "error", message) as never);
 }
 
 export async function createUser(formData: FormData) {
@@ -87,7 +88,7 @@ export async function createUser(formData: FormData) {
   }
 
   revalidatePath("/users");
-  redirect("/users?success=사용자가 등록되었습니다." as never);
+  redirect(buildActionMessageUrl("/users", "success", "사용자가 등록되었습니다.") as never);
 }
 
 export async function toggleUserActive(formData: FormData) {
@@ -131,7 +132,7 @@ export async function toggleUserActive(formData: FormData) {
   }
 
   revalidatePath("/users");
-  redirect("/users?success=사용자 상태가 변경되었습니다." as never);
+  redirect(buildActionMessageUrl("/users", "success", "사용자 상태가 변경되었습니다.") as never);
 }
 
 export async function resetUserPassword(formData: FormData) {
@@ -175,5 +176,5 @@ export async function resetUserPassword(formData: FormData) {
   }
 
   revalidatePath("/users");
-  redirect("/users?success=임시 비밀번호가 설정되었습니다." as never);
+  redirect(buildActionMessageUrl("/users", "success", "임시 비밀번호가 설정되었습니다.") as never);
 }

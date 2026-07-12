@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 import type { UserRole } from "@prisma/client";
 import { cookies } from "next/headers";
@@ -10,6 +10,8 @@ import { isRoleAllowed } from "@/lib/access";
 const SESSION_COOKIE = "reagent_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000;
+const DEVELOPMENT_AUTH_SECRET = "local-development-auth-secret";
+const AUTH_SECRET_MIN_LENGTH = 32;
 
 export type CurrentUser = {
   id: string;
@@ -20,18 +22,27 @@ export type CurrentUser = {
   mustChangePassword: boolean;
 };
 
+function isProductionEnvironment() {
+  return [process.env.NODE_ENV, process.env.APP_ENV, process.env.VERCEL_ENV]
+    .some((value) => value?.trim().toLowerCase() === "production");
+}
+
 function authSecret() {
   const secret = process.env.AUTH_SECRET;
 
-  if (secret) {
-    return secret;
+  if (isProductionEnvironment()) {
+    const normalized = secret?.trim().toLowerCase() ?? "";
+    const placeholder = normalized.includes("replace-with") ||
+      normalized === DEVELOPMENT_AUTH_SECRET;
+
+    if (!secret || secret.trim().length < AUTH_SECRET_MIN_LENGTH || placeholder) {
+      throw new Error(
+        `AUTH_SECRET must be a non-placeholder secret of at least ${AUTH_SECRET_MIN_LENGTH} characters in production.`
+      );
+    }
   }
 
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("AUTH_SECRET is required in production.");
-  }
-
-  return "local-development-auth-secret";
+  return secret || DEVELOPMENT_AUTH_SECRET;
 }
 
 export async function createSession(userId: string) {
@@ -42,7 +53,7 @@ export async function createSession(userId: string) {
     expires,
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isProductionEnvironment(),
     path: "/"
   });
 }
@@ -97,6 +108,10 @@ export async function requireUser() {
 export async function requireRole(allowedRoles: UserRole[]) {
   const user = await requireUser();
 
+  if (user.mustChangePassword) {
+    throw new Error("PASSWORD_CHANGE_REQUIRED");
+  }
+
   if (!isRoleAllowed(user.role, allowedRoles)) {
     throw new Error("FORBIDDEN");
   }
@@ -106,11 +121,7 @@ export async function requireRole(allowedRoles: UserRole[]) {
 
 export async function requirePageRole(allowedRoles: UserRole[]) {
   const user = await requireUser();
+  if (user.mustChangePassword) redirect("/account/password" as never);
   if (!isRoleAllowed(user.role, allowedRoles)) redirect("/access-denied" as never);
   return user;
-}
-
-export async function logout() {
-  await clearSession();
-  redirect("/login" as never);
 }

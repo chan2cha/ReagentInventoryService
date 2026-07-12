@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { buildActionMessageUrl } from "@/lib/action-message-url";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -11,7 +12,7 @@ function formString(formData: FormData, key: string) {
 }
 
 function fail(message: string): never {
-  redirect(`/clients?error=${encodeURIComponent(message)}` as never);
+  redirect(buildActionMessageUrl("/clients", "error", message) as never);
 }
 
 async function ensureUniqueName(name: string, excludeId?: string) {
@@ -55,7 +56,7 @@ export async function createClient(formData: FormData) {
   }
 
   revalidateClientPaths();
-  redirect("/clients?success=거래처가 등록되었습니다." as never);
+  redirect(buildActionMessageUrl("/clients", "success", "거래처가 등록되었습니다.") as never);
 }
 
 export async function updateClient(formData: FormData) {
@@ -72,7 +73,7 @@ export async function updateClient(formData: FormData) {
   }
 
   revalidateClientPaths();
-  redirect("/clients?success=거래처 정보가 수정되었습니다." as never);
+  redirect(buildActionMessageUrl("/clients", "success", "거래처 정보가 수정되었습니다.") as never);
 }
 
 export async function toggleClientActive(formData: FormData) {
@@ -89,5 +90,5 @@ export async function toggleClientActive(formData: FormData) {
   }
 
   revalidateClientPaths();
-  redirect("/clients?success=거래처 상태가 변경되었습니다." as never);
+  redirect(buildActionMessageUrl("/clients", "success", "거래처 상태가 변경되었습니다.") as never);
 }

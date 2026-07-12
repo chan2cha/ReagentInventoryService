@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -36,31 +36,33 @@ enum StockMovementType {
 }
 
 model User {
-  id             String          @id @default(cuid())
-  loginId        String          @unique
-  email          String?         @unique
-  name           String
-  passwordHash   String
-  mustChangePassword Boolean      @default(false)
-  role           UserRole        @default(VIEWER)
-  isActive       Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  orders         Order[]         @relation("OrderCreatedBy")
-  shipments      Shipment[]      @relation("ShipmentShippedBy")
-  stockMovements StockMovement[]
-  auditLogs      AuditLog[]
+  id                    String          @id @default(cuid())
+  loginId               String          @unique
+  email                 String?         @unique
+  name                  String
+  passwordHash          String
+  mustChangePassword    Boolean         @default(false)
+  role                  UserRole        @default(VIEWER)
+  isActive              Boolean         @default(true)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  orders                Order[]         @relation("OrderCreatedBy")
+  shipments             Shipment[]      @relation("ShipmentShippedBy")
+  stockMovements        StockMovement[]
+  auditLogs             AuditLog[]
+  orderTemplatesCreated OrderTemplate[] @relation("OrderTemplateCreatedBy")
+  orderTemplatesUpdated OrderTemplate[] @relation("OrderTemplateUpdatedBy")
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  action     String
-  entityType String
-  entityId   String?
+  id          String   @id @default(cuid())
+  action      String
+  entityType  String
+  entityId    String?
   description String
-  actorId    String
-  createdAt  DateTime @default(now())
-  actor      User     @relation(fields: [actorId], references: [id])
+  actorId     String
+  createdAt   DateTime @default(now())
+  actor       User     @relation(fields: [actorId], references: [id])
 
   @@index([createdAt])
   @@index([entityType, entityId])
@@ -68,35 +70,36 @@ model AuditLog {
 }
 
 model Allergen {
-  id         String         @id @default(cuid())
-  code       String         @unique
-  name       String
-  category   String?
-  minStock   Int            @default(0)
-  isActive   Boolean        @default(true)
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
-  lots       ReagentLot[]
-  orderItems OrderItem[]
+  id                 String              @id @default(cuid())
+  code               String              @unique
+  name               String
+  category           String?
+  minStock           Int                 @default(0)
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  lots               ReagentLot[]
+  orderItems         OrderItem[]
+  orderTemplateItems OrderTemplateItem[]
 
   @@index([name])
 }
 
 model ReagentLot {
-  id             String          @id @default(cuid())
-  allergenId     String
-  lotNo          String
-  expirationDate DateTime
-  receivedDate   DateTime
+  id              String          @id @default(cuid())
+  allergenId      String
+  lotNo           String
+  expirationDate  DateTime
+  receivedDate    DateTime
   initialQuantity Int
   currentQuantity Int
-  memo           String?
-  isActive       Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  allergen       Allergen        @relation(fields: [allergenId], references: [id])
-  shipmentItems  ShipmentItem[]
-  stockMovements StockMovement[]
+  memo            String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  allergen        Allergen        @relation(fields: [allergenId], references: [id])
+  shipmentItems   ShipmentItem[]
+  stockMovements  StockMovement[]
 
   @@unique([allergenId, lotNo, expirationDate])
   @@index([lotNo])
@@ -131,6 +134,7 @@ model Order {
   items     OrderItem[]
   shipments Shipment[]
 
+  @@index([clientId])
   @@index([status])
   @@index([createdAt])
 }
@@ -142,19 +146,58 @@ model OrderItem {
   quantity   Int
   order      Order    @relation(fields: [orderId], references: [id])
   allergen   Allergen @relation(fields: [allergenId], references: [id])
+
+  @@unique([orderId, allergenId])
+  @@index([allergenId])
+}
+
+model OrderTemplate {
+  id          String              @id @default(cuid())
+  name        String
+  nameKey     String              @unique
+  description String?
+  isActive    Boolean             @default(true)
+  sortOrder   Int                 @default(0)
+  version     Int                 @default(1)
+  createdBy   String
+  updatedBy   String
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  creator     User                @relation("OrderTemplateCreatedBy", fields: [createdBy], references: [id])
+  updater     User                @relation("OrderTemplateUpdatedBy", fields: [updatedBy], references: [id])
+  items       OrderTemplateItem[]
+
+  @@index([isActive, sortOrder, name])
+  @@index([createdBy])
+  @@index([updatedBy])
+}
+
+model OrderTemplateItem {
+  id         String        @id @default(cuid())
+  templateId String
+  allergenId String
+  quantity   Int
+  position   Int
+  template   OrderTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  allergen   Allergen      @relation(fields: [allergenId], references: [id], onDelete: Restrict)
+
+  @@unique([templateId, allergenId])
+  @@unique([templateId, position])
+  @@index([allergenId])
 }
 
 model Shipment {
-  id        String           @id @default(cuid())
+  id        String         @id @default(cuid())
   orderId   String
-  status    ShipmentStatus   @default(SHIPPED)
+  status    ShipmentStatus @default(SHIPPED)
   shippedBy String
-  shippedAt DateTime         @default(now())
+  shippedAt DateTime       @default(now())
   memo      String?
-  order     Order            @relation(fields: [orderId], references: [id])
-  shipper   User             @relation("ShipmentShippedBy", fields: [shippedBy], references: [id])
+  order     Order          @relation(fields: [orderId], references: [id])
+  shipper   User           @relation("ShipmentShippedBy", fields: [shippedBy], references: [id])
   items     ShipmentItem[]
 
+  @@index([orderId])
   @@index([shippedAt])
 }
 
@@ -166,6 +209,9 @@ model ShipmentItem {
   quantity     Int
   shipment     Shipment   @relation(fields: [shipmentId], references: [id])
   reagentLot   ReagentLot @relation(fields: [reagentLotId], references: [id])
+
+  @@index([shipmentId])
+  @@index([reagentLotId])
 }
 
 model StockMovement {
@@ -181,5 +227,7 @@ model StockMovement {
   reagentLot   ReagentLot        @relation(fields: [reagentLotId], references: [id])
   creator      User              @relation(fields: [createdBy], references: [id])
 
+  @@index([reagentLotId])
+  @@index([createdBy])
   @@index([createdAt])
 }

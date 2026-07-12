@@ -1,3 +1,4 @@
+import { requirePageRole } from "@/lib/auth";
 import { AppShell, Panel } from "../../reagent-ui";
 import { OrderForm } from "./order-form";
 import { getOrderFormData } from "./order-form-data";
@@ -9,7 +10,7 @@ export default async function NewOrderPage({
 }: {
   searchParams?: Promise<{ error?: string }>;
 }) {
-  const [{ clients, allergens }, params] = await Promise.all([
+  const [{ clients, allergens, templates, templateLoadFailed }, params] = await Promise.all([
     getOrderFormData(),
     searchParams,
     requirePageRole(["ADMIN", "ORDER_MANAGER"])
@@ -26,7 +27,12 @@ export default async function NewOrderPage({
       <div className="form-layout">
         <Panel title="주문 정보" note="최신 정보">
           {error ? <div className="form-alert">{error}</div> : null}
-          <OrderForm allergens={allergens} clients={clients} />
+          <OrderForm
+            allergens={allergens}
+            clients={clients}
+            templateLoadFailed={templateLoadFailed}
+            templates={templates}
+          />
         </Panel>
 
         <Panel title="등록 기준">
@@ -34,6 +40,7 @@ export default async function NewOrderPage({
             <p>주문번호는 ORD-YYYYMMDD-### 형식으로 자동 생성됩니다.</p>
             <p>신규 주문은 접수 상태로 생성되고 출고 처리 화면에 표시됩니다.</p>
             <p>하나의 주문에 여러 시약과 수량을 함께 등록할 수 있습니다.</p>
+            <p>주문 세트는 품목 초안만 채우며, 저장 전에 수량을 수정할 수 있습니다.</p>
             {!canSubmit ? <p>거래처와 시약 목록을 불러오지 못했습니다.</p> : null}
           </div>
         </Panel>
@@ -41,4 +48,3 @@ export default async function NewOrderPage({
     </AppShell>
   );
 }
-import { requirePageRole } from "@/lib/auth";

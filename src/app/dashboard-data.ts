@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { addDateOnlyDays, dateOnlyUtc, daysUntilDateOnly, koreaDateKey, koreaDayRange } from "@/lib/date";
+import { pendingShipmentOrderWhere } from "@/domain/pending-shipment";
 import {
   allergens,
   dashboard,
@@ -176,11 +177,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         }
       }),
       prisma.order.count({
-        where: {
-          status: {
-            in: ["RECEIVED", "READY_TO_SHIP"]
-          }
-        }
+        where: pendingShipmentOrderWhere()
       }),
       prisma.shipment.count({
         where: {

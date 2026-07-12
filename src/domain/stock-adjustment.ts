@@ -2,9 +2,10 @@ export type StockAdjustmentType = "ADJUST" | "DISPOSE";
 export type StockAdjustmentOperation = "ADD" | "REMOVE" | "DISPOSE";
 
 export function signedAdjustmentQuantity(operation: StockAdjustmentOperation, value: string) {
-  const quantity = Number.parseInt(value.trim(), 10);
+  const normalized = value.trim();
+  const quantity = Number(normalized);
 
-  if (!Number.isInteger(quantity) || quantity <= 0) {
+  if (!/^\d+$/.test(normalized) || !Number.isSafeInteger(quantity) || quantity <= 0) {
     throw new Error("ADJUSTMENT_QUANTITY_INVALID");
   }
 

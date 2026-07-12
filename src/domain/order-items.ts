@@ -8,22 +8,42 @@ export type NormalizedOrderItemInput = {
   quantity: number;
 };
 
+const POSTGRES_INTEGER_MAX = 2_147_483_647;
+
+function positiveOrderQuantity(value: string) {
+  const normalized = value.trim();
+
+  if (!/^[1-9]\d*$/.test(normalized)) {
+    throw new Error("ORDER_ITEM_QUANTITY_INVALID");
+  }
+
+  const quantity = Number(normalized);
+
+  if (!Number.isSafeInteger(quantity) || quantity > POSTGRES_INTEGER_MAX) {
+    throw new Error("ORDER_ITEM_QUANTITY_INVALID");
+  }
+
+  return quantity;
+}
+
 export function normalizeOrderItems(items: RawOrderItemInput[]) {
   const merged = new Map<string, number>();
 
   for (const item of items) {
     const allergenId = item.allergenId.trim();
-    const quantity = Number.parseInt(item.quantity.trim(), 10);
 
     if (!allergenId) {
       throw new Error("ORDER_ITEM_ALLERGEN_REQUIRED");
     }
 
-    if (!Number.isInteger(quantity) || quantity < 1) {
+    const quantity = positiveOrderQuantity(item.quantity);
+    const mergedQuantity = (merged.get(allergenId) ?? 0) + quantity;
+
+    if (mergedQuantity > POSTGRES_INTEGER_MAX) {
       throw new Error("ORDER_ITEM_QUANTITY_INVALID");
     }
 
-    merged.set(allergenId, (merged.get(allergenId) ?? 0) + quantity);
+    merged.set(allergenId, mergedQuantity);
   }
 
   const normalized = Array.from(merged.entries()).map(([allergenId, quantity]) => ({

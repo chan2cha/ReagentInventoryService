@@ -21,5 +21,12 @@ describe("normalizeOrderItems", () => {
 
   it("rejects invalid quantities", () => {
     expect(() => normalizeOrderItems([{ allergenId: "EGG", quantity: "0" }])).toThrow("ORDER_ITEM_QUANTITY_INVALID");
+    expect(() => normalizeOrderItems([{ allergenId: "EGG", quantity: "1.5" }])).toThrow("ORDER_ITEM_QUANTITY_INVALID");
+    expect(() => normalizeOrderItems([{ allergenId: "EGG", quantity: "12abc" }])).toThrow("ORDER_ITEM_QUANTITY_INVALID");
+    expect(() => normalizeOrderItems([{ allergenId: "EGG", quantity: "2147483648" }])).toThrow("ORDER_ITEM_QUANTITY_INVALID");
+    expect(() => normalizeOrderItems([
+      { allergenId: "EGG", quantity: "2147483647" },
+      { allergenId: "EGG", quantity: "1" }
+    ])).toThrow("ORDER_ITEM_QUANTITY_INVALID");
   });
 });

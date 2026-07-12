@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { normalizeOrderItems } from "@/domain/order-items";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { koreaDatePrefix } from "@/lib/date";
+import { createOrderValue } from "@/services/order-create-service";
 
 function formString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -14,25 +14,6 @@ function formString(formData: FormData, key: string) {
 
 function fail(message: string): never {
   redirect(`/orders/new?error=${encodeURIComponent(message)}` as never);
-}
-
-async function nextOrderNo(tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) {
-  const datePrefix = koreaDatePrefix();
-  const prefix = `ORD-${datePrefix}-`;
-
-  const latest = await tx.order.findFirst({
-    where: {
-      orderNo: {
-        startsWith: prefix
-      }
-    },
-    orderBy: {
-      orderNo: "desc"
-    }
-  });
-
-  const nextSeq = latest ? Number.parseInt(latest.orderNo.slice(prefix.length), 10) + 1 : 1;
-  return `${prefix}${String(nextSeq).padStart(3, "0")}`;
 }
 
 export async function createOrder(formData: FormData) {
@@ -72,51 +53,15 @@ export async function createOrder(formData: FormData) {
 
   try {
     const user = await requireRole(["ADMIN", "ORDER_MANAGER"]);
-
-    await prisma.$transaction(async (tx) => {
-      const client = await tx.client.findUnique({
-        where: {
-          id: clientId
-        }
-      });
-
-      if (!client) {
-        throw new Error("CLIENT_NOT_FOUND");
-      }
-
-      const allergenCount = await tx.allergen.count({
-        where: {
-          id: {
-            in: items.map((item) => item.allergenId)
-          },
-          isActive: true
-        }
-      });
-
-      if (allergenCount !== items.length) {
-        throw new Error("ALLERGEN_NOT_FOUND");
-      }
-
-      const orderNo = await nextOrderNo(tx);
-      const order = await tx.order.create({
-        data: {
-          orderNo,
-          clientId,
-          status: "RECEIVED",
-          memo: memo || null,
-          createdBy: user.id
-        }
-      });
-
-      await tx.orderItem.createMany({
-        data: items.map((item) => ({
-          orderId: order.id,
-          allergenId: item.allergenId,
-          quantity: item.quantity
-        }))
-      });
+    await createOrderValue(prisma, {
+      clientId,
+      memo: memo || null,
+      items,
+      actorId: user.id
     });
   } catch (error) {
+    unstable_rethrow(error);
+
     if (error instanceof Error && error.message === "FORBIDDEN") {
       fail("주문 등록 권한이 없습니다.");
     }
@@ -127,6 +72,14 @@ export async function createOrder(formData: FormData) {
 
     if (error instanceof Error && error.message === "ALLERGEN_NOT_FOUND") {
       fail("선택한 시약을 찾을 수 없습니다.");
+    }
+
+    if (error instanceof Error && error.message === "TRANSACTION_CONFLICT") {
+      fail("다른 주문 등록과 겹쳤습니다. 잠시 후 다시 시도하세요.");
+    }
+
+    if (error instanceof Error && error.message === "ORDER_DAILY_LIMIT_REACHED") {
+      fail("오늘 등록 가능한 주문번호 999건을 모두 사용했습니다. 관리자에게 문의하세요.");
     }
 
     fail("주문 저장 중 오류가 발생했습니다. 연결 상태를 확인하세요.");

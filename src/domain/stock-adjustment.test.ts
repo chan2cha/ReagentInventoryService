@@ -14,9 +14,11 @@ describe("signedAdjustmentQuantity", () => {
     expect(signedAdjustmentQuantity("DISPOSE", "3")).toBe(-3);
   });
 
-  it("rejects zero, negative, and non-numeric quantities", () => {
+  it("rejects zero, negative, fractional, and partially numeric quantities", () => {
     expect(() => signedAdjustmentQuantity("ADD", "0")).toThrow("ADJUSTMENT_QUANTITY_INVALID");
     expect(() => signedAdjustmentQuantity("REMOVE", "-2")).toThrow("ADJUSTMENT_QUANTITY_INVALID");
+    expect(() => signedAdjustmentQuantity("ADD", "1.9")).toThrow("ADJUSTMENT_QUANTITY_INVALID");
+    expect(() => signedAdjustmentQuantity("ADD", "1abc")).toThrow("ADJUSTMENT_QUANTITY_INVALID");
     expect(() => signedAdjustmentQuantity("DISPOSE", "abc")).toThrow("ADJUSTMENT_QUANTITY_INVALID");
   });
 });

@@ -8,7 +8,10 @@ const actionLabels: Record<string, string> = {
   USER_ACTIVATE: "사용자 활성화",
   USER_DEACTIVATE: "사용자 비활성화",
   USER_PASSWORD_RESET: "비밀번호 재설정",
-  USER_CREATE: "사용자 등록"
+  USER_CREATE: "사용자 등록",
+  INVENTORY_EXPORT: "재고현황 엑셀 생성",
+  MOVEMENT_EXPORT: "입출고이력 엑셀 생성",
+  COMBINED_EXPORT: "업무자료 통합 엑셀 생성"
 };
 
 export async function getAuditRows(requestedPage: number, q = "") {

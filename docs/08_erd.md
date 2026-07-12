@@ -15,7 +15,7 @@ The Prisma schema keeps technical names for consistency, while the UI now uses f
 | `currentQuantity` | 현재 수량 |
 | `initialQuantity` | 입고 수량 |
 | `StockMovement` | 입출고 이력 |
-| `REVERSE` | 되돌림 기록 |
+| `REVERSE` | 출고취소/재고복구 기록 |
 | FEFO | 유통기한 빠른 순 |
 
 ## Diagram
@@ -88,6 +88,28 @@ erDiagram
     int quantity
   }
 
+  OrderTemplate {
+    string id PK
+    string name
+    string nameKey UK
+    string description
+    boolean isActive
+    int sortOrder
+    int version
+    string createdBy FK
+    string updatedBy FK
+    datetime createdAt
+    datetime updatedAt
+  }
+
+  OrderTemplateItem {
+    string id PK
+    string templateId FK
+    string allergenId FK
+    int quantity
+    int position
+  }
+
   Shipment {
     string id PK
     string orderId FK
@@ -117,17 +139,33 @@ erDiagram
     datetime createdAt
   }
 
+  AuditLog {
+    string id PK
+    string action
+    string entityType
+    string entityId
+    string description
+    string actorId FK
+    datetime createdAt
+  }
+
   User ||--o{ Order : creates
+  User ||--o{ OrderTemplate : creates
+  User ||--o{ OrderTemplate : updates
   User ||--o{ Shipment : ships
   User ||--o{ StockMovement : records
+  User ||--o{ AuditLog : acts
 
   Allergen ||--o{ ReagentLot : has
   Allergen ||--o{ OrderItem : ordered_as
+  Allergen ||--o{ OrderTemplateItem : reused_as
 
   Client ||--o{ Order : places
 
   Order ||--o{ OrderItem : contains
   Order ||--o{ Shipment : ships_as
+
+  OrderTemplate ||--|{ OrderTemplateItem : contains
 
   Shipment ||--o{ ShipmentItem : contains
   ReagentLot ||--o{ ShipmentItem : allocated_from
@@ -144,9 +182,12 @@ erDiagram
 | `Client` | Customer or hospital information. |
 | `Order` | Customer order header. |
 | `OrderItem` | Allergen and quantity requested in an order. |
+| `OrderTemplate` | Globally reusable order-item set; it is intentionally not mapped to a client. |
+| `OrderTemplateItem` | Ordered reagent and default quantity stored in an order template. |
 | `Shipment` | Shipment header for an order. |
 | `ShipmentItem` | Actual LOT allocations shipped. |
 | `StockMovement` | Inventory movement audit log. |
+| `AuditLog` | Actor-linked audit record for critical business and administration operations. |
 
 ## Core Rules
 
@@ -159,6 +200,12 @@ erDiagram
 | LOT inventory unit | Inventory is managed at the `ReagentLot` level, not only at the allergen level. |
 | Shipment allocation | Actual outbound stock is recorded through `ShipmentItem.reagentLotId`. |
 | Movement audit | Stock changes are tracked through `StockMovement`. |
+| Global order templates | `OrderTemplate` has no `Client` foreign key and is shared across all customer orders. |
+| Template name uniqueness | Normalized `OrderTemplate.nameKey` is unique. |
+| Template item uniqueness | Each reagent and each position can occur only once per template. |
+| Active reagent policy | Create, update, and reactivation require every template reagent to be active; a template containing a reagent deactivated later cannot be applied to an order draft. |
+| Optimistic concurrency | Template update and activation changes compare `version` and increment it atomically. |
+| Template audit | Create, update, activation, and deactivation write an `AuditLog` entry in the same transaction. |
 
 ## Enums
 
@@ -195,7 +242,7 @@ erDiagram
 | `OUT` | Outbound stock |
 | `ADJUST` | Manual adjustment |
 | `DISPOSE` | Disposal |
-| `REVERSE` | Cancellation or reversal |
+| `REVERSE` | Shipment cancellation / stock restoration |
 
 ## Indexes
 
@@ -207,5 +254,14 @@ erDiagram
 | `ReagentLot` | `currentQuantity` |
 | `Order` | `status` |
 | `Order` | `createdAt` |
+| `OrderTemplate` | `isActive, sortOrder, name` |
+| `OrderTemplate` | `createdBy` |
+| `OrderTemplate` | `updatedBy` |
+| `OrderTemplateItem` | unique `templateId, allergenId` |
+| `OrderTemplateItem` | unique `templateId, position` |
+| `OrderTemplateItem` | `allergenId` |
+| `AuditLog` | `createdAt` |
+| `AuditLog` | `entityType, entityId` |
+| `AuditLog` | `actorId` |
 | `Shipment` | `shippedAt` |
 | `StockMovement` | `createdAt` |

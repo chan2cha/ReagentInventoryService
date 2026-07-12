@@ -1,21 +1,43 @@
 import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
 import { formatDate, getMovementRows, movementSourceLabel } from "./movement-data";
+import { can } from "@/lib/access";
+import { requireUser } from "@/lib/auth";
+import {
+  isStockMovementKind,
+  stockMovementTypeLabel
+} from "@/domain/stock-movement-presentation";
 import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
-import { TableSearch } from "../table-search";
+import { ExportDownloadButton } from "../exports/export-download-button";
+import { MovementTableFilters } from "./movement-table-filters";
 
 export const dynamic = "force-dynamic";
 
-export default async function MovementsPage({ searchParams }: { searchParams?: Promise<{ page?: string; q?: string }> }) {
-  const params = await searchParams; const data = await getMovementRows(parsePage(params?.page), params?.q?.trim()); const movementRows = data.rows;
+export default async function MovementsPage({ searchParams }: { searchParams?: Promise<{ page?: string; q?: string; type?: string }> }) {
+  const params = await searchParams;
+  const user = await requireUser();
+  const typeParam = params?.type?.trim() ?? "";
+  const movementType = isStockMovementKind(typeParam) ? typeParam : undefined;
+  const data = await getMovementRows(parsePage(params?.page), params?.q?.trim(), movementType);
+  const movementRows = data.rows;
+  const canExport = can(user.role, "DATA_EXPORT");
 
   return (
     <AppShell
       active="/movements"
       title="입출고 이력"
-      description="입고, 출고, 조정, 폐기 내역을 제조번호별로 확인합니다."
+      description="입고, 출고, 조정, 폐기 및 출고취소/복구 내역을 제조번호별로 확인합니다."
     >
-      <TableSearch pathname="/movements" placeholder="시약명, 코드, 제조번호, 사유 검색" value={params?.q} />
-      <Panel title="재고 이동 이력" note={`${movementSourceLabel(movementRows)} · 최신순`}>
+      <div className="table-filter-toolbar extended-filter-toolbar">
+        <MovementTableFilters q={params?.q} type={movementType} />
+        {canExport ? (
+          <ExportDownloadButton
+            fallbackFileName="입출고-이력.xlsx"
+            label="현재 조건 엑셀"
+            query={{ report: "movements", q: params?.q, type: movementType }}
+          />
+        ) : null}
+      </div>
+      <Panel title="재고 이동 이력" note={`${movementSourceLabel(movementRows)} · 최신순${movementType ? ` · ${stockMovementTypeLabel(movementType)}` : ""}`}>
         <Table>
           <thead>
             <tr>
@@ -45,7 +67,7 @@ export default async function MovementsPage({ searchParams }: { searchParams?: P
             ))}
           </tbody>
         </Table>
-        <Pagination page={data.page} pathname="/movements" preserve={{ q: params?.q }} total={data.total} totalPages={data.totalPages} />
+        <Pagination page={data.page} pathname="/movements" preserve={{ q: params?.q, type: movementType }} total={data.total} totalPages={data.totalPages} />
       </Panel>
     </AppShell>
   );

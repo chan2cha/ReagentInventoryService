@@ -1,9 +1,54 @@
+const { createHash, pbkdf2Sync, randomBytes } = require("crypto");
 const { PrismaClient } = require("@prisma/client");
+
+const rotateLegacyAdminOnly = process.argv.includes("--rotate-legacy-admin");
+const productionEnvironment = [
+  process.env.NODE_ENV,
+  process.env.APP_ENV,
+  process.env.VERCEL_ENV
+].some((value) => value?.toLowerCase() === "production");
+
+if (productionEnvironment && !rotateLegacyAdminOnly) {
+  throw new Error("Sample seed is disabled in production environments.");
+}
+
+if (!rotateLegacyAdminOnly && process.env.ALLOW_SAMPLE_DATA !== "true") {
+  throw new Error("Set ALLOW_SAMPLE_DATA=true explicitly before running the sample seed.");
+}
+
+const PASSWORD_ITERATIONS = 210_000;
+const PASSWORD_KEY_LENGTH = 32;
+const PASSWORD_DIGEST = "sha256";
+const SEED_PASSWORD_MIN_LENGTH = 12;
+// SHA-256 fingerprints let us recognize and retire the historical public seed
+// credential without retaining that credential or its reusable PBKDF2 value.
+const LEGACY_SEED_HASH_FINGERPRINT = "cfba75f5aafeda3f6f44b741208ac0c8bce5d063c0c037c1f5cb5a4078397ec2";
+const LEGACY_SEED_PASSWORD_FINGERPRINT = "b0d107a1cb94cd60c513a8636f99b8d700154887e2a96f0310a1b5f3e60a6ddd";
+const databaseUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DIRECT_URL or DATABASE_URL is required for seed operations.");
+}
+
+function databaseTarget(url) {
+  const parsed = new URL(url);
+  const port = parsed.port || "5432";
+  const schema = parsed.searchParams.get("schema") || "public";
+  return `${parsed.hostname}:${port}${parsed.pathname}?schema=${schema}`;
+}
+
+const actualDatabaseTarget = databaseTarget(databaseUrl);
+
+if (process.env.SEED_DATABASE_TARGET?.trim() !== actualDatabaseTarget) {
+  throw new Error(
+    `Set SEED_DATABASE_TARGET=${actualDatabaseTarget} explicitly after verifying the non-production seed target or approved legacy-admin recovery target.`
+  );
+}
 
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: process.env.DIRECT_URL || process.env.DATABASE_URL
+      url: databaseUrl
     }
   }
 });
@@ -47,8 +92,6 @@ const userSeed = {
   loginId: "admin",
   email: null,
   name: "관리자",
-  passwordHash: "pbkdf2:sha256:210000:local-seed-admin-salt:dc49e64451718dfaa829959ef36c7c4f54d5b95c15c851cdfdec0b7f1c9801fe",
-  mustChangePassword: false,
   role: "ADMIN"
 };
 
@@ -122,7 +165,158 @@ function date(value) {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
+function hashPassword(password) {
+  const salt = randomBytes(16).toString("hex");
+  const hash = pbkdf2Sync(
+    password,
+    salt,
+    PASSWORD_ITERATIONS,
+    PASSWORD_KEY_LENGTH,
+    PASSWORD_DIGEST
+  ).toString("hex");
+
+  return `pbkdf2:${PASSWORD_DIGEST}:${PASSWORD_ITERATIONS}:${salt}:${hash}`;
+}
+
+function fingerprint(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function isLegacySeedPasswordHash(passwordHash) {
+  return fingerprint(passwordHash) === LEGACY_SEED_HASH_FINGERPRINT;
+}
+
+function requiredSeedAdminPassword() {
+  const password = process.env.SEED_ADMIN_PASSWORD;
+  const normalizedPassword = password?.trim().toLowerCase() ?? "";
+  const looksLikePlaceholder =
+    normalizedPassword.includes("replace-with") ||
+    (normalizedPassword.startsWith("<") && normalizedPassword.endsWith(">"));
+  const reusesLegacyPassword = password
+    ? fingerprint(password) === LEGACY_SEED_PASSWORD_FINGERPRINT
+    : false;
+
+  if (
+    !password ||
+    password.length < SEED_PASSWORD_MIN_LENGTH ||
+    looksLikePlaceholder ||
+    reusesLegacyPassword
+  ) {
+    throw new Error(
+      `A non-placeholder SEED_ADMIN_PASSWORD (at least ${SEED_PASSWORD_MIN_LENGTH} characters and different from the legacy seed password) is required.`
+    );
+  }
+
+  return password;
+}
+
+async function replaceLegacySeedAdmin(existing) {
+  const password = requiredSeedAdminPassword();
+
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.user.findUnique({
+      where: {
+        id: existing.id
+      }
+    });
+
+    if (!current || !isLegacySeedPasswordHash(current.passwordHash)) {
+      const replacement = await tx.user.findUnique({
+        where: {
+          loginId: userSeed.loginId
+        }
+      });
+
+      if (replacement && !isLegacySeedPasswordHash(replacement.passwordHash)) {
+        return replacement;
+      }
+
+      throw new Error("LEGACY_SEED_ADMIN_CHANGED_DURING_ROTATION");
+    }
+
+    await tx.user.update({
+      where: {
+        id: current.id
+      },
+      data: {
+        loginId: `retired-legacy-admin-${current.id}`,
+        passwordHash: hashPassword(randomBytes(32).toString("hex")),
+        isActive: false,
+        mustChangePassword: true
+      }
+    });
+
+    const replacement = await tx.user.create({
+      data: {
+        ...userSeed,
+        passwordHash: hashPassword(password),
+        mustChangePassword: true,
+        isActive: true
+      }
+    });
+
+    await tx.auditLog.create({
+      data: {
+        action: "LEGACY_SEED_ADMIN_REPLACED",
+        entityType: "USER",
+        entityId: replacement.id,
+        description: `Retired vulnerable legacy seed administrator ${current.id} and created a replacement account.`,
+        actorId: replacement.id
+      }
+    });
+
+    return replacement;
+  });
+}
+
+async function seedAdminUser() {
+  const existing = await prisma.user.findUnique({
+    where: {
+      loginId: userSeed.loginId
+    }
+  });
+
+  if (existing) {
+    if (isLegacySeedPasswordHash(existing.passwordHash)) {
+      return replaceLegacySeedAdmin(existing);
+    }
+
+    return existing;
+  }
+
+  const password = requiredSeedAdminPassword();
+
+  return prisma.user.create({
+    data: {
+      ...userSeed,
+      passwordHash: hashPassword(password),
+      mustChangePassword: true,
+      isActive: true
+    }
+  });
+}
+
 async function main() {
+  if (rotateLegacyAdminOnly) {
+    const existing = await prisma.user.findUnique({
+      where: {
+        loginId: userSeed.loginId
+      }
+    });
+
+    if (!existing || !isLegacySeedPasswordHash(existing.passwordHash)) {
+      console.log("No active legacy seed administrator credential was found; no change was made.");
+      return;
+    }
+
+    await replaceLegacySeedAdmin(existing);
+    console.log("Legacy seed administrator retired and replacement administrator created.");
+    return;
+  }
+
+  // Resolve the administrator before writing sample operational data so a missing
+  // initial password fails before the rest of the seed mutates the database.
+  const user = await seedAdminUser();
   const allergensByCode = new Map();
   const clientsByName = new Map();
   const lotsByNo = new Map();
@@ -213,29 +407,6 @@ async function main() {
     }
   }
 
-  const user = await prisma.user.upsert({
-    where: {
-      loginId: userSeed.loginId
-    },
-    update: {
-      email: userSeed.email,
-      name: userSeed.name,
-      passwordHash: userSeed.passwordHash,
-      mustChangePassword: userSeed.mustChangePassword,
-      role: userSeed.role,
-      isActive: true
-    },
-    create: {
-      loginId: userSeed.loginId,
-      email: userSeed.email,
-      name: userSeed.name,
-      passwordHash: userSeed.passwordHash,
-      mustChangePassword: userSeed.mustChangePassword,
-      role: userSeed.role,
-      isActive: true
-    }
-  });
-
   for (const seed of orderSeeds) {
     const client = clientsByName.get(seed.clientName);
 
@@ -279,14 +450,6 @@ async function main() {
     }
   }
 
-  await prisma.stockMovement.deleteMany({
-    where: {
-      creator: {
-        loginId: userSeed.loginId
-      }
-    }
-  });
-
   for (const seed of movementSeeds) {
     const lot = lotsByNo.get(seed.lotNo);
 
@@ -294,16 +457,48 @@ async function main() {
       continue;
     }
 
-    await prisma.stockMovement.create({
-      data: {
+    const movementRefId = `${lot.id}:${seed.type}:${seed.createdAt}`;
+    const existingMovement = await prisma.stockMovement.findFirst({
+      where: {
         reagentLotId: lot.id,
         type: seed.type,
         quantity: seed.quantity,
         reason: seed.reason,
-        createdBy: user.id,
-        createdAt: date(seed.createdAt)
+        createdAt: date(seed.createdAt),
+        OR: [
+          {
+            refType: "SAMPLE_SEED",
+            refId: movementRefId
+          },
+          {
+            refType: null,
+            refId: null
+          }
+        ]
       }
     });
+
+    const data = {
+      reagentLotId: lot.id,
+      type: seed.type,
+      quantity: seed.quantity,
+      reason: seed.reason,
+      refType: "SAMPLE_SEED",
+      refId: movementRefId,
+      createdBy: user.id,
+      createdAt: date(seed.createdAt)
+    };
+
+    if (existingMovement) {
+      await prisma.stockMovement.update({
+        where: {
+          id: existingMovement.id
+        },
+        data
+      });
+    } else {
+      await prisma.stockMovement.create({ data });
+    }
   }
 
   console.log(

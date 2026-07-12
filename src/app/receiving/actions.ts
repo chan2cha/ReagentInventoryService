@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -108,6 +108,8 @@ export async function createReceivingLot(formData: FormData) {
       });
     });
   } catch (error) {
+    unstable_rethrow(error);
+
     if (error instanceof Error && error.message === "FORBIDDEN") {
       fail("입고 등록 권한이 없습니다.");
     }

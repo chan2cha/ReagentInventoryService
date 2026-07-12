@@ -4,17 +4,25 @@ import { StockAdjustmentDialog } from "./stock-adjustment-dialog";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/access";
 import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
-import { TableSearch } from "../table-search";
+import { ExportDownloadButton } from "../exports/export-download-button";
+import { isLotStatusKind, lotStatusLabel } from "@/domain/lot-status";
+import { LotTableFilters } from "./lot-table-filters";
 
 export const dynamic = "force-dynamic";
 
 export default async function LotsPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }>;
+  searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string; status?: string }>;
 }) {
-  const params=await searchParams; const [user,data]=await Promise.all([requireUser(),getLotRows(parsePage(params?.page), params?.q?.trim())]); const lotRows=data.rows;
+  const params = await searchParams;
+  const user = await requireUser();
+  const statusParam = params?.status?.trim() ?? "";
+  const lotStatus = isLotStatusKind(statusParam) ? statusParam : undefined;
+  const data = await getLotRows(parsePage(params?.page), params?.q?.trim(), lotStatus);
+  const lotRows = data.rows;
   const canWrite = can(user.role, "STOCK_WRITE");
+  const canExport = can(user.role, "DATA_EXPORT");
   const error = params?.error;
   const success = params?.success;
 
@@ -28,8 +36,17 @@ export default async function LotsPage({
     >
       {error ? <div className="page-alert">{error}</div> : null}
       {success ? <div className="page-alert success">{success}</div> : null}
-      <TableSearch pathname="/lots" placeholder="시약명, 코드, 제조번호 검색" value={params?.q} />
-      <Panel title="입고분 목록" note={`${lotSourceLabel(lotRows)} · 유통기한 빠른 순`}>
+      <div className="table-filter-toolbar extended-filter-toolbar">
+        <LotTableFilters q={params?.q} status={lotStatus} />
+        {canExport ? (
+          <ExportDownloadButton
+            fallbackFileName="재고-현황.xlsx"
+            label="현재 조건 엑셀"
+            query={{ report: "inventory", q: params?.q, status: lotStatus }}
+          />
+        ) : null}
+      </div>
+      <Panel title="입고분 목록" note={`${lotSourceLabel(lotRows)} · 유통기한 빠른 순${lotStatus ? ` · ${lotStatusLabel(lotStatus)}` : ""}`}>
         <Table>
           <thead>
             <tr>
@@ -67,7 +84,7 @@ export default async function LotsPage({
             ))}
           </tbody>
         </Table>
-        <Pagination page={data.page} pathname="/lots" preserve={{ q: params?.q }} total={data.total} totalPages={data.totalPages} />
+        <Pagination page={data.page} pathname="/lots" preserve={{ q: params?.q, status: lotStatus }} total={data.total} totalPages={data.totalPages} />
       </Panel>
     </AppShell>
   );

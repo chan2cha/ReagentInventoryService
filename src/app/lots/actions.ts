@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { nextStockQuantity, signedAdjustmentQuantity, type StockAdjustmentOperation } from "@/domain/stock-adjustment";
+import { redirect, unstable_rethrow } from "next/navigation";
+import { signedAdjustmentQuantity, type StockAdjustmentOperation } from "@/domain/stock-adjustment";
+import { buildActionMessageUrl } from "@/lib/action-message-url";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { adjustLotStockValue } from "@/services/stock-service";
 
 function formString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -12,7 +14,7 @@ function formString(formData: FormData, key: string) {
 }
 
 function fail(message: string): never {
-  redirect(`/lots?error=${encodeURIComponent(message)}` as never);
+  redirect(buildActionMessageUrl("/lots", "error", message) as never);
 }
 
 export async function adjustLotStock(formData: FormData) {
@@ -46,46 +48,16 @@ export async function adjustLotStock(formData: FormData) {
 
   try {
     const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
-
-    await prisma.$transaction(async (tx) => {
-      const lot = await tx.reagentLot.findUnique({
-        where: {
-          id: lotId
-        },
-        select: {
-          id: true,
-          currentQuantity: true
-        }
-      });
-
-      if (!lot) {
-        throw new Error("LOT_NOT_FOUND");
-      }
-
-      const nextQuantity = nextStockQuantity(lot.currentQuantity, quantity);
-
-      await tx.reagentLot.update({
-        where: {
-          id: lot.id
-        },
-        data: {
-          currentQuantity: nextQuantity
-        }
-      });
-
-      await tx.stockMovement.create({
-        data: {
-          reagentLotId: lot.id,
-          type,
-          quantity,
-          reason,
-          refType: "STOCK_ADJUSTMENT",
-          refId: lot.id,
-          createdBy: user.id
-        }
-      });
+    await adjustLotStockValue(prisma, {
+      lotId,
+      quantity,
+      type,
+      reason,
+      actorId: user.id
     });
   } catch (error) {
+    unstable_rethrow(error);
+
     if (error instanceof Error && error.message === "FORBIDDEN") {
       fail("재고 조정 권한이 없습니다.");
     }
@@ -98,11 +70,15 @@ export async function adjustLotStock(formData: FormData) {
       fail("조정 후 현재 수량은 음수가 될 수 없습니다.");
     }
 
+    if (error instanceof Error && error.message === "TRANSACTION_CONFLICT") {
+      fail("다른 재고 처리와 겹쳤습니다. 잠시 후 다시 시도하세요.");
+    }
+
     fail("재고 조정 중 오류가 발생했습니다. 연결 상태를 확인하세요.");
   }
 
   revalidatePath("/");
   revalidatePath("/lots");
   revalidatePath("/movements");
-  redirect("/lots?success=재고 수량과 이력이 반영되었습니다." as never);
+  redirect(buildActionMessageUrl("/lots", "success", "재고 수량과 이력이 반영되었습니다.") as never);
 }

@@ -5,19 +5,24 @@ import {
   Boxes,
   Building2,
   ClipboardList,
+  FileSpreadsheet,
   FlaskConical,
   Gauge,
   History,
   KeyRound,
+  Layers,
   PackageCheck,
   PackagePlus,
   ScrollText,
   ShieldCheck,
   type LucideIcon
 } from "lucide-react";
-import { logout, requireUser } from "@/lib/auth";
+import { logout } from "@/app/logout/actions";
+import { requireUser } from "@/lib/auth";
 import { can, type Capability } from "@/lib/access";
 import { formatKoreaDateTime } from "@/lib/date";
+import type { StockMovementLabel } from "@/domain/stock-movement-presentation";
+import { formatSidebarBadge, getSidebarData } from "./sidebar-data";
 import {
   dashboard,
   findAllergen,
@@ -27,7 +32,6 @@ import {
   orders,
   today,
   type LotStatus,
-  type MovementType,
   type OrderStatus
 } from "./reagent-data";
 
@@ -40,7 +44,7 @@ type ShellProps = {
   children: React.ReactNode;
 };
 
-type AppRoute = "/" | "/lots" | "/receiving" | "/orders" | "/shipments" | "/clients" | "/allergens" | "/movements" | "/audit" | "/users" | "/account/password" | "/access-denied";
+type AppRoute = "/" | "/lots" | "/receiving" | "/orders" | "/orders/templates" | "/shipments" | "/clients" | "/allergens" | "/movements" | "/exports" | "/audit" | "/users" | "/account/password" | "/access-denied";
 type ActionRoute = AppRoute | "/orders/new";
 
 const navItems: Array<{ href: AppRoute; label: string; icon: LucideIcon; capability?: Capability }> = [
@@ -48,10 +52,12 @@ const navItems: Array<{ href: AppRoute; label: string; icon: LucideIcon; capabil
   { href: "/lots", label: "재고 현황", icon: Boxes },
   { href: "/receiving", label: "입고 등록", icon: PackagePlus, capability: "STOCK_WRITE" },
   { href: "/orders", label: "주문 관리", icon: ClipboardList },
+  { href: "/orders/templates", label: "주문 세트", icon: Layers, capability: "ORDER_TEMPLATE_WRITE" },
   { href: "/shipments", label: "출고 처리", icon: PackageCheck },
   { href: "/clients", label: "거래처", icon: Building2 },
   { href: "/allergens", label: "시약 관리", icon: FlaskConical },
   { href: "/movements", label: "입출고 이력", icon: History },
+  { href: "/exports", label: "자료 내보내기", icon: FileSpreadsheet, capability: "DATA_EXPORT" },
   { href: "/audit", label: "감사 로그", icon: ScrollText, capability: "AUDIT_READ" },
   { href: "/account/password", label: "비밀번호 변경", icon: KeyRound },
   { href: "/users", label: "사용자 관리", icon: ShieldCheck, capability: "USER_ADMIN" }
@@ -70,6 +76,11 @@ export async function AppShell({ active, title, description, action, actionHref,
   if (user.mustChangePassword && active !== "/account/password") {
     redirect("/account/password" as never);
   }
+
+  const sidebarData = user.mustChangePassword
+    ? { pendingShipments: null }
+    : await getSidebarData();
+  const pendingShipmentBadge = formatSidebarBadge(sidebarData.pendingShipments);
 
   return (
     <div className="app-shell">
@@ -93,8 +104,13 @@ export async function AppShell({ active, title, description, action, actionHref,
               >
                 <span className="nav-mark"><Icon aria-hidden="true" size={17} strokeWidth={2} /></span>
                 <span>{item.label}</span>
-                {item.href === "/shipments" && dashboard.pendingShipments > 0 ? (
-                  <em>{dashboard.pendingShipments}</em>
+                {item.href === "/shipments" && pendingShipmentBadge ? (
+                  <em
+                    aria-label={`출고 대기 ${sidebarData.pendingShipments}건`}
+                    title={`출고 대기 ${sidebarData.pendingShipments}건`}
+                  >
+                    {pendingShipmentBadge}
+                  </em>
                 ) : null}
               </Link>
             );
@@ -164,7 +180,7 @@ export function StatGrid({
   );
 }
 
-export function StatusBadge({ status }: { status: LotStatus | OrderStatus | MovementType }) {
+export function StatusBadge({ status }: { status: LotStatus | OrderStatus | StockMovementLabel }) {
   const className = {
     정상: "ok",
     재고부족: "warn",
@@ -178,7 +194,8 @@ export function StatusBadge({ status }: { status: LotStatus | OrderStatus | Move
     입고: "info",
     출고: "ok",
     조정: "warn",
-    폐기: "danger"
+    폐기: "danger",
+    "출고취소/복구": "muted"
   }[status];
 
   const label = status === "품절" ? "재고 없음" : status;

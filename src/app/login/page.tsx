@@ -44,7 +44,7 @@ export default async function LoginPage({
         <form action={login} className="login-form">
           <label>
             아이디
-            <input autoComplete="username" defaultValue="admin" name="loginId" placeholder="아이디" required />
+            <input autoComplete="username" name="loginId" placeholder="아이디" required />
           </label>
           <label>
             비밀번호

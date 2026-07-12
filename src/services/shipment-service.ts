@@ -1,52 +1,329 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
+import { addDateOnlyDays, dateOnlyUtc, koreaDateKey } from "../lib/date";
+import { RetryableTransactionError, runSerializableTransaction } from "../lib/transaction";
 
-type Database = PrismaClient;
+type RequestedItem = {
+  allergenId: string;
+  allergenCode: string;
+  quantity: number;
+};
 
-export async function processShipment(db: Database, orderId: string, actorId: string) {
-  return db.$transaction(async (tx) => {
-    const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: { include: { allergen: true } } } });
-    if (!order) throw new Error("ORDER_NOT_FOUND");
-    if (order.status === "SHIPPED") throw new Error("ORDER_ALREADY_SHIPPED");
-    if (order.status === "CANCELLED") throw new Error("ORDER_CANCELLED");
+type Allocation = {
+  allergenId: string;
+  lotId: string;
+  quantity: number;
+};
 
-    const allocations: Array<{ allergenId: string; lotId: string; quantity: number }> = [];
-    for (const item of order.items) {
-      let remaining = item.quantity;
-      const lots = await tx.reagentLot.findMany({ where: { allergenId: item.allergenId, currentQuantity: { gt: 0 }, isActive: true }, orderBy: [{ expirationDate: "asc" }, { lotNo: "asc" }] });
-      for (const lot of lots) {
-        if (remaining === 0) break;
-        const quantity = Math.min(remaining, lot.currentQuantity);
-        remaining -= quantity;
-        allocations.push({ allergenId: item.allergenId, lotId: lot.id, quantity });
+function assertShippableOrder(order: {
+  status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANCELLED";
+  shipments: Array<{ id: string }>;
+}) {
+  if (order.status === "SHIPPED" || order.shipments.length > 0) {
+    throw new Error("ORDER_ALREADY_SHIPPED");
+  }
+
+  if (order.status === "CANCELLED") {
+    throw new Error("ORDER_CANCELLED");
+  }
+}
+
+export async function processShipment(
+  db: PrismaClient,
+  orderId: string,
+  actorId: string,
+  now?: Date
+) {
+  return runSerializableTransaction(db, async (tx) => {
+    // Keep an injected date stable in tests, but refresh the production clock for
+    // every serializable retry so a retry crossing Korean midnight cannot use an
+    // already-expired LOT.
+    const todayKey = koreaDateKey(now ?? new Date());
+    const today = dateOnlyUtc(todayKey);
+    const tomorrow = addDateOnlyDays(todayKey, 1);
+
+    const order = await tx.order.findUnique({
+      where: {
+        id: orderId
+      },
+      include: {
+        items: {
+          include: {
+            allergen: true
+          }
+        },
+        shipments: {
+          where: {
+            status: "SHIPPED"
+          },
+          select: {
+            id: true
+          }
+        }
       }
-      if (remaining > 0) throw new Error(`INSUFFICIENT_STOCK:${item.allergen.code}`);
+    });
+
+    if (!order) {
+      throw new Error("ORDER_NOT_FOUND");
     }
 
-    const shipment = await tx.shipment.create({ data: { orderId, status: "SHIPPED", shippedBy: actorId, memo: "유통기한 빠른 순 자동 출고" } });
+    assertShippableOrder(order);
+
+    const claim = await tx.order.updateMany({
+      where: {
+        id: order.id,
+        status: {
+          in: ["RECEIVED", "READY_TO_SHIP"]
+        },
+        shipments: {
+          none: {
+            status: "SHIPPED"
+          }
+        }
+      },
+      data: {
+        status: "SHIPPED"
+      }
+    });
+
+    if (claim.count !== 1) {
+      throw new RetryableTransactionError();
+    }
+
+    const requestedByAllergen = new Map<string, RequestedItem>();
+
+    for (const item of order.items) {
+      if (item.quantity <= 0) {
+        throw new Error("ORDER_ITEM_QUANTITY_INVALID");
+      }
+
+      const current = requestedByAllergen.get(item.allergenId);
+      requestedByAllergen.set(item.allergenId, {
+        allergenId: item.allergenId,
+        allergenCode: item.allergen.code,
+        quantity: (current?.quantity ?? 0) + item.quantity
+      });
+    }
+
+    if (requestedByAllergen.size === 0) {
+      throw new Error("ORDER_ITEMS_EMPTY");
+    }
+
+    const allocations: Allocation[] = [];
+
+    for (const item of requestedByAllergen.values()) {
+      let remaining = item.quantity;
+      const candidateLots = await tx.reagentLot.findMany({
+        where: {
+          allergenId: item.allergenId,
+          currentQuantity: {
+            gt: 0
+          },
+          expirationDate: {
+            gte: today
+          },
+          receivedDate: {
+            lt: tomorrow
+          },
+          isActive: true
+        },
+        orderBy: [
+          { expirationDate: "asc" },
+          { lotNo: "asc" }
+        ]
+      });
+
+      for (const lot of candidateLots) {
+        if (remaining <= 0) {
+          break;
+        }
+
+        const quantity = Math.min(lot.currentQuantity, remaining);
+        remaining -= quantity;
+        allocations.push({
+          allergenId: item.allergenId,
+          lotId: lot.id,
+          quantity
+        });
+      }
+
+      if (remaining > 0) {
+        throw new Error(`INSUFFICIENT_STOCK:${item.allergenCode}`);
+      }
+    }
+
     for (const allocation of allocations) {
-      await tx.reagentLot.update({ where: { id: allocation.lotId }, data: { currentQuantity: { decrement: allocation.quantity } } });
-      await tx.shipmentItem.create({ data: { shipmentId: shipment.id, reagentLotId: allocation.lotId, allergenId: allocation.allergenId, quantity: allocation.quantity } });
-      await tx.stockMovement.create({ data: { reagentLotId: allocation.lotId, type: "OUT", quantity: allocation.quantity, reason: order.orderNo, refType: "SHIPMENT", refId: shipment.id, createdBy: actorId } });
+      const deduction = await tx.reagentLot.updateMany({
+        where: {
+          id: allocation.lotId,
+          currentQuantity: {
+            gte: allocation.quantity
+          },
+          expirationDate: {
+            gte: today
+          },
+          receivedDate: {
+            lt: tomorrow
+          },
+          isActive: true
+        },
+        data: {
+          currentQuantity: {
+            decrement: allocation.quantity
+          }
+        }
+      });
+
+      if (deduction.count !== 1) {
+        throw new RetryableTransactionError();
+      }
     }
-    await tx.order.update({ where: { id: orderId }, data: { status: "SHIPPED" } });
-    await tx.auditLog.create({ data: { action: "SHIPMENT_CREATE", entityType: "SHIPMENT", entityId: shipment.id, description: `${order.orderNo} 출고 처리`, actorId } });
+
+    const shipment = await tx.shipment.create({
+      data: {
+        orderId: order.id,
+        status: "SHIPPED",
+        shippedBy: actorId,
+        memo: "유통기한 빠른 순 자동 출고"
+      }
+    });
+
+    for (const allocation of allocations) {
+      await tx.shipmentItem.create({
+        data: {
+          shipmentId: shipment.id,
+          reagentLotId: allocation.lotId,
+          allergenId: allocation.allergenId,
+          quantity: allocation.quantity
+        }
+      });
+
+      await tx.stockMovement.create({
+        data: {
+          reagentLotId: allocation.lotId,
+          type: "OUT",
+          quantity: allocation.quantity,
+          reason: order.orderNo,
+          refType: "SHIPMENT",
+          refId: shipment.id,
+          createdBy: actorId
+        }
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        action: "SHIPMENT_CREATE",
+        entityType: "SHIPMENT",
+        entityId: shipment.id,
+        description: `${order.orderNo} 출고 처리`,
+        actorId
+      }
+    });
+
     return shipment;
-  }, { isolationLevel: "Serializable" });
+  });
 }
 
-export async function reverseShipment(db: Database, shipmentId: string, actorId: string, reason: string) {
-  return db.$transaction(async (tx) => {
-    const shipment = await tx.shipment.findUnique({ where: { id: shipmentId }, include: { items: true, order: true } });
-    if (!shipment) throw new Error("SHIPMENT_NOT_FOUND");
-    if (shipment.status === "CANCELLED") throw new Error("SHIPMENT_ALREADY_CANCELLED");
-    for (const item of shipment.items) {
-      await tx.reagentLot.update({ where: { id: item.reagentLotId }, data: { currentQuantity: { increment: item.quantity } } });
-      await tx.stockMovement.create({ data: { reagentLotId: item.reagentLotId, type: "REVERSE", quantity: item.quantity, reason: `${shipment.order.orderNo} 출고 취소`, refType: "SHIPMENT_CANCEL", refId: shipment.id, createdBy: actorId } });
+export async function reverseShipment(
+  db: PrismaClient,
+  shipmentId: string,
+  actorId: string,
+  reason: string
+) {
+  return runSerializableTransaction(db, async (tx) => {
+    const shipment = await tx.shipment.findUnique({
+      where: {
+        id: shipmentId
+      },
+      include: {
+        items: true,
+        order: true
+      }
+    });
+
+    if (!shipment) {
+      throw new Error("SHIPMENT_NOT_FOUND");
     }
-    await tx.shipment.update({ where: { id: shipment.id }, data: { status: "CANCELLED", memo: shipment.memo ? `${shipment.memo} / 출고 취소: ${reason}` : `출고 취소: ${reason}` } });
-    await tx.order.update({ where: { id: shipment.orderId }, data: { status: "READY_TO_SHIP" } });
-    await tx.auditLog.create({ data: { action: "SHIPMENT_CANCEL", entityType: "SHIPMENT", entityId: shipment.id, description: `${shipment.order.orderNo} 출고 취소: ${reason}`, actorId } });
-  }, { isolationLevel: "Serializable" });
-}
 
-export type TransactionClient = Prisma.TransactionClient;
+    if (shipment.status === "CANCELLED") {
+      throw new Error("SHIPMENT_ALREADY_CANCELLED");
+    }
+
+    const memo = shipment.memo
+      ? `${shipment.memo} / 출고 취소: ${reason}`
+      : `출고 취소: ${reason}`;
+    const claim = await tx.shipment.updateMany({
+      where: {
+        id: shipment.id,
+        status: "SHIPPED"
+      },
+      data: {
+        status: "CANCELLED",
+        memo
+      }
+    });
+
+    if (claim.count !== 1) {
+      throw new RetryableTransactionError();
+    }
+
+    for (const item of shipment.items) {
+      await tx.reagentLot.update({
+        where: {
+          id: item.reagentLotId
+        },
+        data: {
+          currentQuantity: {
+            increment: item.quantity
+          }
+        }
+      });
+
+      await tx.stockMovement.create({
+        data: {
+          reagentLotId: item.reagentLotId,
+          type: "REVERSE",
+          quantity: item.quantity,
+          reason: `${shipment.order.orderNo} 출고 취소: ${reason}`,
+          refType: "SHIPMENT_CANCEL",
+          refId: shipment.id,
+          createdBy: actorId
+        }
+      });
+    }
+
+    const releasedOrder = await tx.order.updateMany({
+      where: {
+        id: shipment.orderId,
+        status: "SHIPPED",
+        shipments: {
+          none: {
+            status: "SHIPPED"
+          }
+        }
+      },
+      data: {
+        status: "READY_TO_SHIP"
+      }
+    });
+
+    if (releasedOrder.count !== 1) {
+      throw new RetryableTransactionError();
+    }
+
+    await tx.auditLog.create({
+      data: {
+        action: "SHIPMENT_CANCEL",
+        entityType: "SHIPMENT",
+        entityId: shipment.id,
+        description: `${shipment.order.orderNo} 출고 취소: ${reason}`,
+        actorId
+      }
+    });
+
+    return {
+      id: shipment.id,
+      orderId: shipment.orderId
+    };
+  });
+}
