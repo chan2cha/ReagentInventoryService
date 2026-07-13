@@ -17,6 +17,7 @@ The main operational workflow is implemented end to end:
 7. Track inbound, outbound, adjustment, disposal, and reversal history.
 8. View operational status on the dashboard.
 9. Authenticate users with a signed httpOnly cookie session.
+   Sessions are version-bound and are revoked after password resets or account deactivation.
 10. Enforce role checks on write operations.
 11. Manage internal users from an administrator-only screen.
 12. Require newly registered users to change their temporary password.
@@ -35,6 +36,7 @@ The main operational workflow is implemented end to end:
 25. Manage globally reusable order sets and apply them idempotently to editable multi-item order drafts.
 26. Use one reusable set as an order's editable baseline, preserve manual rows through set changes, and keep large set collections usable through in-form search, selected-only filtering, and progressive disclosure.
 27. Export filtered stock and movement data as individual or selected combined XLSX sheets with access control, size limits, and audit records.
+28. Detect expiry-driven proactive replacement candidates from original shipment LOTs, confirm client remaining quantity, ship eligible replacement LOTs, and record return disposition and audit history.
 
 List pagination uses 20 rows per page and URL query parameters. Audit, movements, orders, lots, clients, allergens, and users use `page`; shipments preserve independent `ordersPage` and `historyPage` values for the two lists on the same screen.
 
@@ -102,6 +104,7 @@ Authenticated screens use the official company logo in a white sidebar, Shinyoun
 | `/orders/new` | Implemented | Creates multi-item orders manually or from one searchable baseline set, with exact/modified state, safe set switching, and six-at-a-time disclosure. |
 | `/orders/templates` | Implemented | `ADMIN`/`ORDER_MANAGER` management of global order sets, items, and activation state. |
 | `/shipments` | Implemented | Ships orders, shows recent shipments, supports shipment cancellation. |
+| `/replacements` | Implemented | `ADMIN`/`SHIPMENT_MANAGER` proactive replacement candidate review, exclusion, confirmation, FEFO replacement shipment, and return disposition; `ADMIN` can manage notification and replacement shelf-life thresholds. |
 | `/clients` | Implemented | DB-backed client registration, editing, and activation management. |
 | `/allergens` | Implemented | DB-backed reagent registration, editing, minimum stock, and activation management. |
 | `/movements` | Implemented | DB-backed stock movement history. |
@@ -356,6 +359,7 @@ Behavior:
 - Describes the operational effect in each confirmation message.
 - Disables submitted buttons and shows a processing label while the server action runs.
 - Shows distinct success and error notices after processing.
+- Stores notices in a short-lived httpOnly flash cookie, redirects to a clean path, and clears the cookie after the notice is rendered; messages are not placed in URL query parameters or browser history.
 - Runs native required-field validation before requesting confirmation.
 
 ### Authentication Tests and Audit Log
@@ -363,6 +367,7 @@ Behavior:
 Behavior:
 
 - Tests PBKDF2 password verification, malformed hashes, session signing, expiration, and tamper rejection.
+- Runs unknown, inactive, and wrong-password login attempts through the same PBKDF2 verification path and returns the same credential-failure response.
 - Tests explicit role allow/deny decisions used by server-side authorization.
 - Requires a reason when cancelling an order or shipment.
 - Records order cancellation, shipment processing/cancellation, reusable order-set writes, user registration, activation changes, administrator password resets, and successful data exports.
@@ -427,7 +432,7 @@ Migrations:
 - `prisma/migrations/20260712000000_enforce_inventory_invariants/migration.sql`
 - `prisma/migrations/20260712150000_add_order_templates/migration.sql`
 - Operations guide: `docs/11_database_migrations.md`
-- The existing Supabase schema was registered with `20260710000000_baseline`. On 2026-07-12 the operational database passed the P0 preflight and both forward migrations through `20260712150000_add_order_templates` were applied successfully.
+- The existing Supabase schema was registered with `20260710000000_baseline`. On 2026-07-12 the operational database passed the P0 preflight and both forward migrations through `20260712150000_add_order_templates` were applied successfully. On 2026-07-13 it also applied `20260713100000_add_user_session_version` and `20260713110000_add_proactive_replacements`; Prisma status is current.
 - The P0 invariant migration adds quantity/date CHECK constraints, duplicate-order-item protection, one active shipment per order, and foreign-key traversal indexes. Run its documented preflight before deployment.
 - The order-set migration adds `OrderTemplate` and `OrderTemplateItem`, normalized-name and per-template uniqueness, positive quantity/version checks, actor foreign keys, and no client mapping.
 
@@ -473,11 +478,11 @@ npm test
 
 Date handling is centralized in `src/lib/date.ts`. Korean midnight boundaries, date-only expiration comparisons, and UTC query ranges are covered by automated tests.
 
-The external-service-free suite currently contains 144 unit and policy tests. In addition to the prior authentication, transaction, validation, redirect, and reusable-order-set regressions, it covers the real-data sidebar shipment count and failure fallback, inventory-screen search/status pagination, inventory status precedence and export matching, movement-screen search/type predicate reuse, export filter validation and Korean date boundaries, movement labels and stock-delta direction, lean export projections, row/text/file limits, shipment-reference resolution, repeatable-read invocation, report-specific parameter rejection, structured audit details, workbook sheet/cell formatting, download authorization, and audit-before-release behavior. Integration tests use `TEST_DATABASE_URL`, reject both runtime and direct operational DB targets even when a different database username or pooler port is supplied, and run separately with `npm run test:integration`. The 12-test integration suite calls the production services and covers the existing inventory/shipment contention cases plus reusable order-set create/search/concurrent-update/stale-version rejection/deactivation/audit behavior, stale-order rejection after reagent deactivation, concurrent order-number allocation, and filtered inventory/movement export with shipment-reference resolution.
+The external-service-free suite currently contains 156 unit and policy tests. In addition to the prior authentication, transaction, validation, redirect, and reusable-order-set regressions, it covers version-bound session revocation, constant-cost invalid-credential handling, the real-data sidebar shipment count and failure fallback, inventory-screen search/status pagination, inventory status precedence and export matching, movement-screen search/type predicate reuse, export filter validation and Korean date boundaries, movement labels and stock-delta direction, lean export projections, row/text/file limits, shipment-reference resolution, repeatable-read invocation, report-specific parameter rejection, structured audit details, workbook sheet/cell formatting, download authorization, and audit-before-release behavior. Integration tests use `TEST_DATABASE_URL`, reject both runtime and direct operational DB targets even when a different database username or pooler port is supplied, and run separately with `npm run test:integration`. The 12-test integration suite calls the production services and covers the existing inventory/shipment contention cases plus reusable order-set create/search/concurrent-update/stale-version rejection/deactivation/audit behavior, stale-order rejection after reagent deactivation, concurrent order-number allocation, and filtered inventory/movement export with shipment-reference resolution.
 
-The 144-test unit suite, typecheck, lint, Prisma validation, production build, and all 12 isolated PostgreSQL integration tests passed on 2026-07-13. The isolated `TEST_DATABASE_URL` is current through `20260712150000_add_order_templates`. A built Next server E2E confirmed both the unauthenticated no-store Korean JSON `401` path and an authenticated combined export with `내보내기정보`, `재고현황`, and `입출고이력` sheets, typed inventory delta, and one required `COMBINED_EXPORT` audit record. Its temporary user, reagent, lot, movement, and audit fixtures were removed and a zero-fixture cleanup check passed. The earlier authenticated Server Action E2E confirmed a `303` response, committed data, an ASCII-safe redirect header, and the correctly decoded Korean success message; its fixture was also removed immediately afterward.
+The 156-test unit suite, typecheck, lint, Prisma validation, production build, and all 12 isolated PostgreSQL integration tests passed on 2026-07-13. The isolated `TEST_DATABASE_URL` is current through `20260713100000_add_user_session_version`. A built Next server E2E confirmed both the unauthenticated no-store Korean JSON `401` path and an authenticated combined export with `내보내기정보`, `재고현황`, and `입출고이력` sheets, typed inventory delta, and one required `COMBINED_EXPORT` audit record. Its temporary user, reagent, lot, movement, and audit fixtures were removed and a zero-fixture cleanup check passed. The earlier authenticated Server Action E2E confirmed a `303` response, committed data, an ASCII-safe redirect header, and the correctly decoded Korean success message; its fixture was also removed immediately afterward.
 
-The operational database separately passed all nine P0 preflight checks, was backed up in PostgreSQL custom format, and successfully applied both pending forward migrations. Post-deployment status reported all three migrations current; 14 CHECK constraints and five key unique/partial indexes were verified. After correcting the saved pooler assignments, authenticated read-only production-server smoke requests using the normal `:6543` runtime connection returned HTTP 200 for `/orders/templates` and `/orders/new` without an error page. The application artifact still needs to be deployed or restarted if it runs in a separate hosting environment.
+The operational database separately passed all nine P0 preflight checks, was backed up in PostgreSQL custom format, and successfully applied its initial forward migrations. On 2026-07-13, the session-version, proactive-replacement, and administrator-managed replacement-policy migrations were also applied; Prisma status reports all six migrations current. After correcting the saved pooler assignments, authenticated read-only production-server smoke requests using the normal `:6543` runtime connection returned HTTP 200 for `/orders/templates` and `/orders/new` without an error page. Deploy or restart the current application artifact before using the newer session and replacement workflows in the hosting environment.
 
 ## Known Issues
 

@@ -14,6 +14,11 @@ type Allocation = {
   quantity: number;
 };
 
+export type ShipmentAllocationInput = {
+  lotId: string;
+  quantity: number;
+};
+
 function assertShippableOrder(order: {
   status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANCELLED";
   shipments: Array<{ id: string }>;
@@ -31,7 +36,8 @@ export async function processShipment(
   db: PrismaClient,
   orderId: string,
   actorId: string,
-  now?: Date
+  now?: Date,
+  selectedAllocations?: ShipmentAllocationInput[]
 ) {
   return runSerializableTransaction(db, async (tx) => {
     // Keep an injected date stable in tests, but refresh the production clock for
@@ -53,7 +59,8 @@ export async function processShipment(
         },
         shipments: {
           where: {
-            status: "SHIPPED"
+            status: "SHIPPED",
+            purpose: "ORDER"
           },
           select: {
             id: true
@@ -76,7 +83,8 @@ export async function processShipment(
         },
         shipments: {
           none: {
-            status: "SHIPPED"
+            status: "SHIPPED",
+            purpose: "ORDER"
           }
         }
       },
@@ -110,44 +118,58 @@ export async function processShipment(
 
     const allocations: Allocation[] = [];
 
-    for (const item of requestedByAllergen.values()) {
-      let remaining = item.quantity;
-      const candidateLots = await tx.reagentLot.findMany({
-        where: {
-          allergenId: item.allergenId,
-          currentQuantity: {
-            gt: 0
-          },
-          expirationDate: {
-            gte: today
-          },
-          receivedDate: {
-            lt: tomorrow
-          },
-          isActive: true
-        },
-        orderBy: [
-          { expirationDate: "asc" },
-          { lotNo: "asc" }
-        ]
-      });
-
-      for (const lot of candidateLots) {
-        if (remaining <= 0) {
-          break;
+    if (selectedAllocations) {
+      const normalized = new Map<string, number>();
+      for (const allocation of selectedAllocations) {
+        if (!allocation.lotId || !Number.isInteger(allocation.quantity) || allocation.quantity <= 0) {
+          throw new Error("INVALID_ALLOCATION");
         }
-
-        const quantity = Math.min(lot.currentQuantity, remaining);
-        remaining -= quantity;
-        allocations.push({
-          allergenId: item.allergenId,
-          lotId: lot.id,
-          quantity
-        });
+        normalized.set(allocation.lotId, (normalized.get(allocation.lotId) ?? 0) + allocation.quantity);
       }
 
-      if (remaining > 0) {
-        throw new Error(`INSUFFICIENT_STOCK:${item.allergenCode}`);
+      const selectedLots = await tx.reagentLot.findMany({
+        where: { id: { in: [...normalized.keys()] } },
+        select: { id: true, allergenId: true }
+      });
+      const lotById = new Map(selectedLots.map((lot) => [lot.id, lot]));
+      const allocatedByAllergen = new Map<string, number>();
+
+      for (const [lotId, quantity] of normalized) {
+        const lot = lotById.get(lotId);
+        if (!lot || !requestedByAllergen.has(lot.allergenId)) {
+          throw new Error("INVALID_ALLOCATION");
+        }
+        allocatedByAllergen.set(lot.allergenId, (allocatedByAllergen.get(lot.allergenId) ?? 0) + quantity);
+        allocations.push({ allergenId: lot.allergenId, lotId, quantity });
+      }
+
+      for (const item of requestedByAllergen.values()) {
+        if (allocatedByAllergen.get(item.allergenId) !== item.quantity) {
+          throw new Error(`ALLOCATION_QUANTITY_MISMATCH:${item.allergenCode}`);
+        }
+      }
+    } else {
+      for (const item of requestedByAllergen.values()) {
+        let remaining = item.quantity;
+        const candidateLots = await tx.reagentLot.findMany({
+          where: {
+            allergenId: item.allergenId,
+            currentQuantity: { gt: 0 },
+            expirationDate: { gte: today },
+            receivedDate: { lt: tomorrow },
+            isActive: true
+          },
+          orderBy: [{ expirationDate: "asc" }, { lotNo: "asc" }]
+        });
+
+        for (const lot of candidateLots) {
+          if (remaining <= 0) break;
+          const quantity = Math.min(lot.currentQuantity, remaining);
+          remaining -= quantity;
+          allocations.push({ allergenId: item.allergenId, lotId: lot.id, quantity });
+        }
+
+        if (remaining > 0) throw new Error(`INSUFFICIENT_STOCK:${item.allergenCode}`);
       }
     }
 
@@ -174,7 +196,7 @@ export async function processShipment(
       });
 
       if (deduction.count !== 1) {
-        throw new RetryableTransactionError();
+        throw new Error("ALLOCATION_UNAVAILABLE");
       }
     }
 
@@ -183,7 +205,7 @@ export async function processShipment(
         orderId: order.id,
         status: "SHIPPED",
         shippedBy: actorId,
-        memo: "유통기한 빠른 순 자동 출고"
+        memo: selectedAllocations ? "관리자 LOT 배정 출고" : "유통기한 빠른 순 자동 출고"
       }
     });
 
@@ -245,6 +267,10 @@ export async function reverseShipment(
       throw new Error("SHIPMENT_NOT_FOUND");
     }
 
+    if (shipment.purpose !== "ORDER") {
+      throw new Error("SHIPMENT_NOT_REVERSIBLE");
+    }
+
     if (shipment.status === "CANCELLED") {
       throw new Error("SHIPMENT_ALREADY_CANCELLED");
     }
@@ -255,7 +281,8 @@ export async function reverseShipment(
     const claim = await tx.shipment.updateMany({
       where: {
         id: shipment.id,
-        status: "SHIPPED"
+        status: "SHIPPED",
+        purpose: "ORDER"
       },
       data: {
         status: "CANCELLED",
@@ -298,7 +325,8 @@ export async function reverseShipment(
         status: "SHIPPED",
         shipments: {
           none: {
-            status: "SHIPPED"
+            status: "SHIPPED",
+            purpose: "ORDER"
           }
         }
       },

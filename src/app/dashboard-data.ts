@@ -2,8 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { addDateOnlyDays, dateOnlyUtc, daysUntilDateOnly, koreaDateKey, koreaDayRange } from "@/lib/date";
 import { pendingShipmentOrderWhere } from "@/domain/pending-shipment";
+import { getReplacementPolicy } from "@/services/replacement-service";
 import {
-  allergens,
   dashboard,
   findAllergen,
   findClient,
@@ -46,12 +46,6 @@ export type DashboardMovementRow = {
   source: "database" | "sample";
 };
 
-export type DashboardCategoryRow = {
-  category: string;
-  count: number;
-  source: "database" | "sample";
-};
-
 export type DashboardData = {
   stats: {
     todayOrders: number;
@@ -63,7 +57,12 @@ export type DashboardData = {
   priorityLots: DashboardLotRow[];
   orderSummary: DashboardOrderRow[];
   recentMovements: DashboardMovementRow[];
-  categories: DashboardCategoryRow[];
+  replacementSummary: {
+    candidateCount: number;
+    confirmedCount: number;
+    completedCount: number;
+    source: "database" | "sample";
+  };
 };
 
 function mapOrderStatus(status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANCELLED"): OrderStatus {
@@ -138,18 +137,12 @@ function sampleDashboardData(): DashboardData {
     source: "sample" as const
   }));
 
-  const categories = ["흡입성", "식품성"].map((category) => ({
-    category,
-    count: allergens.filter((allergen) => allergen.category === category).length,
-    source: "sample" as const
-  }));
-
   return {
     stats: dashboard,
     priorityLots,
     orderSummary,
     recentMovements,
-    categories
+    replacementSummary: { candidateCount: 0, confirmedCount: 0, completedCount: 0, source: "sample" }
   };
 }
 
@@ -159,6 +152,8 @@ export async function getDashboardData(): Promise<DashboardData> {
     const todayKey = koreaDateKey();
     const expiringFrom = dateOnlyUtc(todayKey);
     const expiringTo = addDateOnlyDays(todayKey, 31);
+    const replacementPolicy = await getReplacementPolicy(prisma);
+    const replacementThreshold = addDateOnlyDays(todayKey, replacementPolicy.detectionDays);
 
     const [
       todayOrders,
@@ -169,7 +164,9 @@ export async function getDashboardData(): Promise<DashboardData> {
       priorityLots,
       orderSummary,
       recentMovements,
-      categoryGroups
+      replacementCandidateCount,
+      confirmedReplacementCount,
+      completedReplacementCount
     ] = await Promise.all([
       prisma.order.count({
         where: {
@@ -243,15 +240,15 @@ export async function getDashboardData(): Promise<DashboardData> {
         },
         take: 5
       }),
-      prisma.allergen.groupBy({
-        by: ["category"],
-        _count: {
-          _all: true
-        },
-        orderBy: {
-          category: "asc"
+      prisma.shipmentItem.count({
+        where: {
+          shipment: { status: "SHIPPED", purpose: "ORDER" },
+          reagentLot: { expirationDate: { lte: replacementThreshold } },
+          replacement: { is: null }
         }
-      })
+      }),
+      prisma.replacement.count({ where: { status: "CONFIRMED" } }),
+      prisma.replacement.count({ where: { status: "COMPLETED" } })
     ]);
 
     return {
@@ -288,11 +285,12 @@ export async function getDashboardData(): Promise<DashboardData> {
         memo: movement.reason ?? "-",
         source: "database"
       })),
-      categories: categoryGroups.map((group) => ({
-        category: group.category ?? "-",
-        count: group._count._all,
+      replacementSummary: {
+        candidateCount: replacementCandidateCount,
+        confirmedCount: confirmedReplacementCount,
+        completedCount: completedReplacementCount,
         source: "database"
-      }))
+      }
     };
   } catch (error) {
     return handleDataSourceError("dashboard", error, sampleDashboardData);

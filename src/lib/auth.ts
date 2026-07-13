@@ -45,11 +45,15 @@ function authSecret() {
   return secret || DEVELOPMENT_AUTH_SECRET;
 }
 
-export async function createSession(userId: string) {
+export async function createSession(userId: string, sessionVersion: number) {
   const cookieStore = await cookies();
   const expires = new Date(Date.now() + SESSION_MAX_AGE_MS);
 
-  cookieStore.set(SESSION_COOKIE, encodeSession({ userId, expiresAt: expires.getTime() }, authSecret()), {
+  cookieStore.set(SESSION_COOKIE, encodeSession({
+    userId,
+    sessionVersion,
+    expiresAt: expires.getTime()
+  }, authSecret()), {
     expires,
     httpOnly: true,
     sameSite: "lax",
@@ -80,7 +84,8 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const user = await prisma.user.findFirst({
     where: {
       id: payload.userId,
-      isActive: true
+      isActive: true,
+      sessionVersion: payload.sessionVersion
     },
     select: {
       id: true,

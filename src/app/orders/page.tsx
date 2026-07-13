@@ -6,18 +6,19 @@ import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/access";
 import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
 import { TableSearch } from "../table-search";
+import { FlashMessage } from "../flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
+import { ItemQuantitySummary } from "../item-quantity-summary";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrdersPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }>;
+  searchParams?: Promise<{ page?: string; q?: string }>;
 }) {
-  const params = await searchParams; const [user, data] = await Promise.all([requireUser(), getOrderRows(parsePage(params?.page), params?.q?.trim())]); const orderRows = data.rows;
+  const params = await searchParams; const [user, data, flash] = await Promise.all([requireUser(), getOrderRows(parsePage(params?.page), params?.q?.trim()), getFlashMessage()]); const orderRows = data.rows;
   const canWrite = can(user.role, "ORDER_WRITE");
-  const error = params?.error;
-  const success = params?.success;
 
   return (
     <AppShell
@@ -27,8 +28,7 @@ export default async function OrdersPage({
       action={canWrite ? "주문 등록" : undefined}
       actionHref={canWrite ? "/orders/new" : undefined}
     >
-      {error ? <div className="page-alert">{error}</div> : null}
-      {success ? <div className="page-alert success">{success}</div> : null}
+      <FlashMessage value={flash} />
       <TableSearch pathname="/orders" placeholder="주문번호, 거래처, 시약, 메모 검색" value={params?.q} />
       <Panel title="주문 목록" note={`${orderSourceLabel(orderRows)} · 최근 주문 우선`}>
         <Table>
@@ -54,18 +54,18 @@ export default async function OrdersPage({
                   </span>
                 </td>
                 <td>{formatDate(order.orderDate)}</td>
-                <td>{order.items}</td>
+                <td><ItemQuantitySummary items={order.itemDetails} /></td>
                 <td>{order.memo}</td>
                 <td><StatusBadge status={order.status} /></td>
-                {canWrite ? <td>
+                {canWrite ? <td>{order.canCancel && order.source === "database" ? (
                   <form action={cancelOrder} className="inline-cancel-form">
                     <input name="orderId" type="hidden" value={order.id} />
                     <input aria-label="주문 취소 사유" name="reason" placeholder="취소 사유" required />
-                    <SubmitButton className="table-action danger" confirmMessage={`${order.orderNo} 주문을 취소하시겠습니까? 취소 후에는 출고 대기 목록에서 제외됩니다.`} disabled={!order.canCancel || order.source !== "database"} pendingLabel="취소 중...">
+                    <SubmitButton className="table-action danger" confirmMessage={`${order.orderNo} 주문을 취소하시겠습니까? 취소 후에는 출고 대기 목록에서 제외됩니다.`} pendingLabel="취소 중...">
                       주문 취소
                     </SubmitButton>
                   </form>
-                </td> : null}
+                ) : null}</td> : null}
               </tr>
             ))}
           </tbody>

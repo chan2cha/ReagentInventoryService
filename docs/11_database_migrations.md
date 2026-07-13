@@ -174,6 +174,29 @@ The operational database was then handled separately: all nine P0 preflight coun
 
 At deployment time the saved local `.env` initially had the pooler ports assigned in reverse (`DATABASE_URL=:5432`, `DIRECT_URL=:6543`). The migration commands used a verified one-process override so no migration ran through the transaction pooler. The values were then corrected to `DATABASE_URL=:6543` and `DIRECT_URL=:5432`; ordinary `prisma:migrate:status` completed over `:5432`, and authenticated read-only screen checks completed over the normal `:6543` runtime path.
 
+## Session Version Migration
+
+Migration `20260713100000_add_user_session_version` adds a positive integer `User.sessionVersion` with default `1`. Signed login sessions include this value, and authenticated user lookup requires the token version to match the current database value.
+
+- Existing sessions issued before this migration do not contain a version and are rejected after the matching application release.
+- Self-service password changes increment the version and issue a replacement session to the current browser.
+- Administrator password resets and account deactivation increment the version and revoke every previously issued session for that user.
+- Reactivation does not restore an older session because its version remains stale.
+
+On 2026-07-13 this forward-only, additive migration was applied successfully to both the operational Supabase database and the isolated `TEST_DATABASE_URL`. The isolated database then passed all 12 PostgreSQL integration tests. The operational application artifact must include the matching version-aware session code before users log in again.
+
+## Proactive Replacement Migration
+
+Migration `20260713110000_add_proactive_replacements` adds replacement workflow enums, `Shipment.purpose`, and the `Replacement` table. The active-order-shipment partial unique index now applies only to `purpose = ORDER`, allowing traceable replacement shipments without weakening duplicate normal-shipment protection. Positive confirmed quantity, one workflow per original shipment item, unique replacement shipment linkage, actor relations, and required exclusion reasons are enforced in PostgreSQL.
+
+The migration was applied to the isolated `TEST_DATABASE_URL` on 2026-07-13. All 13 integration tests then passed, including confirmation of a client remainder and FEFO shipment from stock meeting the configured minimum shelf life. The operational Supabase database applied the same migration successfully on 2026-07-13, and `prisma migrate status` then reported that the database schema was up to date. Deploy or restart the matching application artifact before using `/replacements` in production.
+
+## Replacement Policy Migration
+
+Migration `20260713120000_add_replacement_policy` adds the singleton `ReplacementPolicy` row. Administrators can change `detectionDays` (when a shipped LOT becomes a proactive-replacement notification candidate) and `minimumDeliveryShelfDays` (the minimum remaining expiry period allowed for replacement stock) from `/replacements`. Both values must be positive integers, and each change writes an `REPLACEMENT_POLICY_UPDATE` audit record.
+
+The migration initializes the policy to 60 notification days and 180 minimum delivery shelf-life days. It was applied to both the isolated test database and the operational Supabase database on 2026-07-13; migration status reports all six migrations current.
+
 ## Rollback and Recovery
 
 Prisma migrations are forward-only. Do not edit a migration after it has been deployed.

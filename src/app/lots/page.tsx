@@ -7,24 +7,24 @@ import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pag
 import { ExportDownloadButton } from "../exports/export-download-button";
 import { isLotStatusKind, lotStatusLabel } from "@/domain/lot-status";
 import { LotTableFilters } from "./lot-table-filters";
+import { FlashMessage } from "../flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
 
 export const dynamic = "force-dynamic";
 
 export default async function LotsPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string; status?: string }>;
+  searchParams?: Promise<{ page?: string; q?: string; status?: string }>;
 }) {
   const params = await searchParams;
-  const user = await requireUser();
+  const [user, flash] = await Promise.all([requireUser(), getFlashMessage()]);
   const statusParam = params?.status?.trim() ?? "";
   const lotStatus = isLotStatusKind(statusParam) ? statusParam : undefined;
   const data = await getLotRows(parsePage(params?.page), params?.q?.trim(), lotStatus);
   const lotRows = data.rows;
   const canWrite = can(user.role, "STOCK_WRITE");
   const canExport = can(user.role, "DATA_EXPORT");
-  const error = params?.error;
-  const success = params?.success;
 
   return (
     <AppShell
@@ -34,8 +34,7 @@ export default async function LotsPage({
       action={canWrite ? "입고 등록" : undefined}
       actionHref={canWrite ? "/receiving" : undefined}
     >
-      {error ? <div className="page-alert">{error}</div> : null}
-      {success ? <div className="page-alert success">{success}</div> : null}
+      <FlashMessage value={flash} />
       <div className="table-filter-toolbar extended-filter-toolbar">
         <LotTableFilters q={params?.q} status={lotStatus} />
         {canExport ? (

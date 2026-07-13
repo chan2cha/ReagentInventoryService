@@ -27,6 +27,23 @@ enum ShipmentStatus {
   CANCELLED
 }
 
+enum ShipmentPurpose {
+  ORDER
+  REPLACEMENT
+}
+
+enum ReplacementStatus {
+  CONFIRMED
+  COMPLETED
+  EXCLUDED
+}
+
+enum ReturnDisposition {
+  COLLECTED_DISPOSED
+  CLIENT_DISPOSED
+  NOT_COLLECTED
+}
+
 enum StockMovementType {
   IN
   OUT
@@ -41,6 +58,7 @@ model User {
   email                 String?         @unique
   name                  String
   passwordHash          String
+  sessionVersion        Int             @default(1)
   mustChangePassword    Boolean         @default(false)
   role                  UserRole        @default(VIEWER)
   isActive              Boolean         @default(true)
@@ -52,6 +70,8 @@ model User {
   auditLogs             AuditLog[]
   orderTemplatesCreated OrderTemplate[] @relation("OrderTemplateCreatedBy")
   orderTemplatesUpdated OrderTemplate[] @relation("OrderTemplateUpdatedBy")
+  replacementsCreated   Replacement[]   @relation("ReplacementCreatedBy")
+  replacementsCompleted Replacement[]   @relation("ReplacementCompletedBy")
 }
 
 model AuditLog {
@@ -190,12 +210,14 @@ model Shipment {
   id        String         @id @default(cuid())
   orderId   String
   status    ShipmentStatus @default(SHIPPED)
+  purpose   ShipmentPurpose @default(ORDER)
   shippedBy String
   shippedAt DateTime       @default(now())
   memo      String?
   order     Order          @relation(fields: [orderId], references: [id])
   shipper   User           @relation("ShipmentShippedBy", fields: [shippedBy], references: [id])
   items     ShipmentItem[]
+  replacement Replacement? @relation("ReplacementShipment")
 
   @@index([orderId])
   @@index([shippedAt])
@@ -209,9 +231,41 @@ model ShipmentItem {
   quantity     Int
   shipment     Shipment   @relation(fields: [shipmentId], references: [id])
   reagentLot   ReagentLot @relation(fields: [reagentLotId], references: [id])
+  replacement  Replacement? @relation("OriginalShipmentItem")
 
   @@index([shipmentId])
   @@index([reagentLotId])
+}
+
+model ReplacementPolicy {
+  id                        String   @id
+  detectionDays             Int
+  minimumDeliveryShelfDays  Int
+  updatedAt                 DateTime @updatedAt
+}
+
+model Replacement {
+  id                     String             @id @default(cuid())
+  replacementNo          String             @unique
+  originalShipmentItemId String             @unique
+  confirmedQuantity      Int
+  status                 ReplacementStatus  @default(CONFIRMED)
+  returnDisposition      ReturnDisposition?
+  exclusionReason        String?
+  replacementShipmentId  String?            @unique
+  createdBy              String
+  completedBy            String?
+  createdAt              DateTime           @default(now())
+  completedAt            DateTime?
+  updatedAt              DateTime           @updatedAt
+  originalShipmentItem   ShipmentItem       @relation("OriginalShipmentItem", fields: [originalShipmentItemId], references: [id], onDelete: Restrict)
+  replacementShipment    Shipment?          @relation("ReplacementShipment", fields: [replacementShipmentId], references: [id], onDelete: Restrict)
+  creator                User               @relation("ReplacementCreatedBy", fields: [createdBy], references: [id])
+  completer              User?              @relation("ReplacementCompletedBy", fields: [completedBy], references: [id])
+
+  @@index([status, createdAt])
+  @@index([createdBy])
+  @@index([completedBy])
 }
 
 model StockMovement {

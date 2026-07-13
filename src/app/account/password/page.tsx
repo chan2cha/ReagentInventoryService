@@ -1,16 +1,13 @@
 import { AppShell, Panel } from "@/app/reagent-ui";
 import { SubmitButton } from "@/app/submit-button";
+import { FlashMessage } from "@/app/flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
 import { changePassword } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function PasswordPage({
-  searchParams
-}: {
-  searchParams?: Promise<{ error?: string }>;
-}) {
-  const params = await searchParams;
-  const error = params?.error;
+export default async function PasswordPage() {
+  const flash = await getFlashMessage();
 
   return (
     <AppShell
@@ -20,7 +17,7 @@ export default async function PasswordPage({
     >
       <div className="form-layout account-layout">
         <Panel title="비밀번호 변경">
-          {error ? <div className="form-alert">{error}</div> : null}
+          <FlashMessage form value={flash} />
           <form action={changePassword} className="entry-form compact-entry-form">
             <label>
               현재 비밀번호

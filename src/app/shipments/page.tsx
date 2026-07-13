@@ -1,24 +1,27 @@
 import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
 import { SubmitButton } from "../submit-button";
-import { cancelShipment, shipOrder } from "./actions";
+import { cancelShipment } from "./actions";
 import { formatDate, getShipmentPageData, shipmentSourceLabel } from "./shipment-data";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/access";
 import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
 import { TableSearch } from "../table-search";
+import { FlashMessage } from "../flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
+import { OperationGuide, guideIcons } from "../operation-guide";
+import { ShipmentAllocationDialog } from "./shipment-allocation-dialog";
+import { ItemQuantitySummary } from "../item-quantity-summary";
 
 export const dynamic = "force-dynamic";
 
 export default async function ShipmentsPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string; success?: string; ordersPage?: string; historyPage?: string; ordersQ?: string; historyQ?: string }>;
+  searchParams?: Promise<{ ordersPage?: string; historyPage?: string; ordersQ?: string; historyQ?: string }>;
 }) {
-  const params=await searchParams; const [user, data] = await Promise.all([requireUser(), getShipmentPageData(parsePage(params?.ordersPage),parsePage(params?.historyPage),params?.ordersQ?.trim(),params?.historyQ?.trim())]);
+  const params=await searchParams; const [user, data, flash] = await Promise.all([requireUser(), getShipmentPageData(parsePage(params?.ordersPage),parsePage(params?.historyPage),params?.ordersQ?.trim(),params?.historyQ?.trim()), getFlashMessage()]);
   const { orders, recommendedLots, shipmentHistory } = data;
   const canWrite = can(user.role, "SHIPMENT_WRITE");
-  const error = params?.error;
-  const success = params?.success;
 
   return (
     <AppShell
@@ -26,8 +29,15 @@ export default async function ShipmentsPage({
       title="출고 처리"
       description="출고 대기 주문을 확인하고 유통기한이 빠른 재고부터 배정합니다."
     >
-      {error ? <div className="page-alert">{error}</div> : null}
-      {success ? <div className="page-alert success">{success}</div> : null}
+      <FlashMessage value={flash} />
+
+      <Panel title="출고·복구 안내" note="처리 전 확인 사항">
+        <OperationGuide items={[
+          { title: "재고 배정 기준", description: "출고 시 유통기한이 빠른 재고부터 자동으로 차감합니다.", icon: guideIcons.Clock3 },
+          { title: "출고 취소 결과", description: "취소하면 출고 수량만큼 재고가 복구되고 주문은 준비중으로 돌아갑니다.", icon: guideIcons.PackageCheck, tone: "success" },
+          { title: "이력 기록", description: "복구 내역은 입출고 이력에 되돌림 기록으로 남습니다.", icon: guideIcons.ShieldCheck }
+        ]} />
+      </Panel>
 
       <div className="dashboard-grid">
         <Panel title="출고 대기 주문" note={shipmentSourceLabel(orders)}>
@@ -54,16 +64,9 @@ export default async function ShipmentsPage({
                     </span>
                   </td>
                   <td>{formatDate(order.orderDate)}</td>
-                  <td>{order.items}</td>
+                  <td><ItemQuantitySummary items={order.itemDetails} /></td>
                   <td><StatusBadge status={order.status} /></td>
-                  {canWrite ? <td>
-                    <form action={shipOrder}>
-                      <input name="orderId" type="hidden" value={order.id} />
-                      <SubmitButton className="table-action" confirmMessage={`${order.orderNo} 주문을 출고 처리하시겠습니까? 유통기한이 빠른 재고부터 자동 차감됩니다.`} disabled={order.source !== "database"} pendingLabel="출고 중...">
-                        출고 처리
-                      </SubmitButton>
-                    </form>
-                  </td> : null}
+                  {canWrite ? <td><ShipmentAllocationDialog order={order} /></td> : null}
                 </tr>
               ))}
               {orders.length === 0 ? (
@@ -115,17 +118,17 @@ export default async function ShipmentsPage({
                   <td>{shipment.orderNo}</td>
                   <td>{shipment.clientName}</td>
                   <td>{formatDate(shipment.shippedAt)}</td>
-                  <td>{shipment.itemSummary}</td>
+                  <td><ItemQuantitySummary items={shipment.itemDetails} /></td>
                   <td><StatusBadge status={shipment.status} /></td>
-                  {canWrite ? <td>
+                  {canWrite ? <td>{shipment.canCancel && shipment.source === "database" ? (
                     <form action={cancelShipment} className="inline-cancel-form">
                       <input name="shipmentId" type="hidden" value={shipment.id} />
                       <input aria-label="출고 취소 사유" name="reason" placeholder="취소 사유" required />
-                      <SubmitButton className="table-action danger" confirmMessage={`${shipment.orderNo} 출고를 취소하시겠습니까? 차감된 재고가 복구되고 주문은 준비중으로 돌아갑니다.`} disabled={!shipment.canCancel || shipment.source !== "database"} pendingLabel="복구 중...">
+                      <SubmitButton className="table-action danger" confirmMessage={`${shipment.orderNo} 출고를 취소하시겠습니까? 차감된 재고가 복구되고 주문은 준비중으로 돌아갑니다.`} pendingLabel="복구 중...">
                         출고 취소
                       </SubmitButton>
                     </form>
-                  </td> : null}
+                  ) : null}</td> : null}
                 </tr>
               ))}
               {shipmentHistory.length === 0 ? (
@@ -138,13 +141,6 @@ export default async function ShipmentsPage({
           <Pagination page={data.historyMeta.page} paramName="historyPage" pathname="/shipments" preserve={{ordersPage:params?.ordersPage,ordersQ:params?.ordersQ,historyQ:params?.historyQ}} total={data.historyMeta.total} totalPages={data.historyMeta.totalPages} />
         </Panel>
 
-        <Panel title="복구 기준">
-          <div className="rule-list">
-            <p>출고 취소 시 출고한 수량만큼 재고가 복구됩니다.</p>
-            <p>복구 내역은 입출고 이력에 되돌림 기록으로 남습니다.</p>
-            <p>취소된 출고의 주문 상태는 다시 준비중으로 전환됩니다.</p>
-          </div>
-        </Panel>
       </div>
     </AppShell>
   );

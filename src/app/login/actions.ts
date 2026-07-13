@@ -2,7 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { createSession } from "@/lib/auth";
-import { verifyPassword } from "@/lib/password";
+import { redirectWithFlash } from "@/lib/flash-message";
+import { verifyLoginPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 
 function formString(formData: FormData, key: string) {
@@ -10,8 +11,8 @@ function formString(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function fail(message: string): never {
-  redirect(`/login?error=${encodeURIComponent(message)}` as never);
+async function fail(message: string): Promise<never> {
+  return redirectWithFlash("/login", "error", message);
 }
 
 export async function login(formData: FormData) {
@@ -19,7 +20,7 @@ export async function login(formData: FormData) {
   const password = formString(formData, "password");
 
   if (!loginId || !password) {
-    fail("아이디와 비밀번호를 입력하세요.");
+    await fail("아이디와 비밀번호를 입력하세요.");
   }
 
   const user = await prisma.user.findUnique({
@@ -27,12 +28,13 @@ export async function login(formData: FormData) {
       loginId
     }
   });
+  const passwordValid = verifyLoginPassword(password, user?.passwordHash);
 
-  if (!user || !user.isActive || !verifyPassword(password, user.passwordHash)) {
-    fail("아이디 또는 비밀번호가 올바르지 않습니다.");
+  if (!user || !user.isActive || !passwordValid) {
+    return fail("아이디 또는 비밀번호가 올바르지 않습니다.");
   }
 
-  await createSession(user.id);
+  await createSession(user.id, user.sessionVersion);
 
   if (user.mustChangePassword) {
     redirect("/account/password" as never);

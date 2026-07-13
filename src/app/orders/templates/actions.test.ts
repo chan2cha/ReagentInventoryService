@@ -69,7 +69,7 @@ describe("order template actions", () => {
         ]
       }
     );
-    expect(redirectDigest(error)).toContain("success=");
+    expect(redirectDigest(error)).toContain("/orders/templates;307;");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/orders/new");
   });
 
@@ -85,9 +85,8 @@ describe("order template actions", () => {
     const error = await captureThrown(updateOrderTemplate(data));
     const digest = redirectDigest(error);
 
-    expect(digest).toContain("/orders/templates?error=");
+    expect(digest).toContain("/orders/templates;307;");
     expect(digest).not.toContain("다른 사용자가");
-    expect(decodeURIComponent(digest)).toContain("다른 사용자가 먼저 수정했습니다.");
   });
 
   it("uses the submitted target state instead of toggling stale database state", async () => {
@@ -112,7 +111,7 @@ describe("order template actions", () => {
 
     const error = await captureThrown(setOrderTemplateActive(data));
 
-    expect(redirectDigest(error)).toContain("/orders/templates?error=");
+    expect(redirectDigest(error)).toContain("/orders/templates;307;");
     expect(mocks.setOrderTemplateActive).not.toHaveBeenCalled();
     expect(mocks.requireRole).toHaveBeenCalledWith(["ADMIN", "ORDER_MANAGER"]);
   });

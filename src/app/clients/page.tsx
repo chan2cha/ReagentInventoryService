@@ -6,17 +6,18 @@ import { clientSourceLabel, getClientRows } from "./client-data";
 import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
 import { RegistrationDialog } from "../registration-dialog";
 import { TableSearch } from "../table-search";
+import { FlashMessage } from "../flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClientsPage({ searchParams }: { searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }> }) {
-  const params=await searchParams; const [user,data]=await Promise.all([requireUser(),getClientRows(parsePage(params?.page), params?.q?.trim())]); const clientRows=data.rows;
+export default async function ClientsPage({ searchParams }: { searchParams?: Promise<{ page?: string; q?: string }> }) {
+  const params=await searchParams; const [user,data,flash]=await Promise.all([requireUser(),getClientRows(parsePage(params?.page), params?.q?.trim()),getFlashMessage()]); const clientRows=data.rows;
   const canManage = user.role === "ADMIN";
 
   return (
     <AppShell active="/clients" title="거래처 관리" description="주문과 출고에 사용하는 거래처 정보를 관리합니다.">
-      {params?.error ? <div className="page-alert">{params.error}</div> : null}
-      {params?.success ? <div className="page-alert success">{params.success}</div> : null}
+      <FlashMessage value={flash} />
 
       {canManage ? <div className="page-toolbar"><RegistrationDialog title="거래처 등록" triggerLabel="거래처 등록"><form action={createClient} className="entry-form compact-entry-form"><label>거래처명<input name="name" placeholder="병원 또는 기관명" required /></label><label>담당자<input name="managerName" placeholder="선택 입력" /></label><label>연락처<input name="phone" placeholder="선택 입력" type="tel" /></label><label>주소<input name="address" placeholder="선택 입력" /></label><label>메모<textarea name="memo" placeholder="거래처 관련 참고사항" /></label><div className="form-actions"><SubmitButton className="primary-button" pendingLabel="등록 중...">등록</SubmitButton></div></form></RegistrationDialog></div> : null}
       <TableSearch pathname="/clients" placeholder="거래처명, 담당자, 연락처, 주소 검색" value={params?.q} />

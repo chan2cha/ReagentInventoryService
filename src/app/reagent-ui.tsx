@@ -13,6 +13,7 @@ import {
   PackageCheck,
   PackagePlus,
   ScrollText,
+  RefreshCw,
   ShieldCheck,
   type LucideIcon
 } from "lucide-react";
@@ -45,7 +46,7 @@ type ShellProps = {
   children: React.ReactNode;
 };
 
-type AppRoute = "/" | "/lots" | "/receiving" | "/orders" | "/orders/templates" | "/shipments" | "/clients" | "/allergens" | "/movements" | "/exports" | "/audit" | "/users" | "/account/password" | "/access-denied";
+type AppRoute = "/" | "/lots" | "/receiving" | "/orders" | "/orders/templates" | "/shipments" | "/replacements" | "/clients" | "/allergens" | "/movements" | "/exports" | "/audit" | "/users" | "/account/password" | "/access-denied";
 type ActionRoute = AppRoute | "/orders/new";
 
 const navItems: Array<{ href: AppRoute; label: string; icon: LucideIcon; capability?: Capability }> = [
@@ -55,6 +56,7 @@ const navItems: Array<{ href: AppRoute; label: string; icon: LucideIcon; capabil
   { href: "/orders", label: "주문 관리", icon: ClipboardList },
   { href: "/orders/templates", label: "주문 세트", icon: Layers, capability: "ORDER_TEMPLATE_WRITE" },
   { href: "/shipments", label: "출고 처리", icon: PackageCheck },
+  { href: "/replacements", label: "선제 교환", icon: RefreshCw, capability: "SHIPMENT_WRITE" },
   { href: "/clients", label: "거래처", icon: Building2 },
   { href: "/allergens", label: "시약 관리", icon: FlaskConical },
   { href: "/movements", label: "입출고 이력", icon: History },
@@ -79,9 +81,10 @@ export async function AppShell({ active, title, description, action, actionHref,
   }
 
   const sidebarData = user.mustChangePassword
-    ? { pendingShipments: null }
+    ? { pendingShipments: null, replacementCandidates: null }
     : await getSidebarData();
   const pendingShipmentBadge = formatSidebarBadge(sidebarData.pendingShipments);
+  const replacementCandidateBadge = formatSidebarBadge(sidebarData.replacementCandidates);
 
   return (
     <div className="app-shell">
@@ -111,6 +114,14 @@ export async function AppShell({ active, title, description, action, actionHref,
                     title={`출고 대기 ${sidebarData.pendingShipments}건`}
                   >
                     {pendingShipmentBadge}
+                  </em>
+                ) : null}
+                {item.href === "/replacements" && replacementCandidateBadge ? (
+                  <em
+                    aria-label={`선제 교환 확인 대상 ${sidebarData.replacementCandidates}건`}
+                    title={`선제 교환 확인 대상 ${sidebarData.replacementCandidates}건`}
+                  >
+                    {replacementCandidateBadge}
                   </em>
                 ) : null}
               </ProgressLink>
@@ -144,7 +155,7 @@ export async function AppShell({ active, title, description, action, actionHref,
           ) : null}
           {action && !actionHref ? <button className="primary-button" type="button">{action}</button> : null}
         </header>
-        {children}
+        <div className="page-content">{children}</div>
       </main>
     </div>
   );

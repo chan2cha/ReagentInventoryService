@@ -49,6 +49,7 @@ describe("forced password change authorization", () => {
     });
     mocks.decodeSession.mockReturnValue({
       userId: forcedChangeUser.id,
+      sessionVersion: 4,
       expiresAt: Date.now() + 60_000
     });
     mocks.findFirst.mockResolvedValue(forcedChangeUser);
@@ -60,6 +61,13 @@ describe("forced password change authorization", () => {
 
   it("allows the authenticated user lookup used by password change", async () => {
     await expect(requireUser()).resolves.toEqual(forcedChangeUser);
+    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        id: forcedChangeUser.id,
+        isActive: true,
+        sessionVersion: 4
+      }
+    }));
   });
 
   it("blocks direct operational action authorization", async () => {

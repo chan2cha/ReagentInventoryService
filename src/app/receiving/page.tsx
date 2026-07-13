@@ -4,20 +4,18 @@ import { createReceivingLot } from "./actions";
 import { getReceivingAllergens, receivingSourceLabel } from "./receiving-data";
 import { koreaDateKey } from "@/lib/date";
 import { requirePageRole } from "@/lib/auth";
+import { FlashMessage } from "@/app/flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
+import { OperationGuide, guideIcons } from "../operation-guide";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReceivingPage({
-  searchParams
-}: {
-  searchParams?: Promise<{ error?: string }>;
-}) {
-  const [, allergens, params] = await Promise.all([
+export default async function ReceivingPage() {
+  const [, allergens, flash] = await Promise.all([
     requirePageRole(["ADMIN", "SHIPMENT_MANAGER"]),
     getReceivingAllergens(),
-    searchParams
+    getFlashMessage()
   ]);
-  const error = params?.error;
   const canSubmit = allergens.some((allergen) => allergen.source === "database");
 
   return (
@@ -26,9 +24,17 @@ export default async function ReceivingPage({
       title="입고 등록"
       description="새로 들어온 시약의 제조번호와 수량을 등록합니다."
     >
+      <FlashMessage value={flash} />
+      <Panel title="입고 안내" note="저장 전 확인 사항">
+        <OperationGuide items={[
+          { title: "중복 등록 방지", description: "동일 시약·제조번호·유통기한 조합은 한 번만 등록할 수 있습니다.", icon: guideIcons.ShieldCheck },
+          { title: "수량 입력 기준", description: "입고 수량은 1개 이상으로 입력하세요.", icon: guideIcons.PackageCheck },
+          { title: "저장 결과", description: "저장 즉시 현재 재고와 입고 이력에 함께 반영됩니다.", tone: "success" },
+          ...(!canSubmit ? [{ title: "목록을 불러올 수 없음", description: "시약 목록 연결 상태를 확인한 후 다시 시도하세요.", tone: "attention" as const }] : [])
+        ]} />
+      </Panel>
       <div className="form-layout">
         <Panel title="입고 정보" note={receivingSourceLabel(allergens)}>
-          {error ? <div className="form-alert">{error}</div> : null}
           <form action={createReceivingLot} className="entry-form">
             <label>
               시약명
@@ -69,14 +75,6 @@ export default async function ReceivingPage({
           </form>
         </Panel>
 
-        <Panel title="등록 기준">
-          <div className="rule-list">
-            <p>동일 시약, 제조번호, 유통기한 조합은 중복 등록하지 않습니다.</p>
-            <p>입고 수량은 1개 이상이어야 합니다.</p>
-            <p>저장하면 재고와 입고 이력이 함께 기록됩니다.</p>
-            {!canSubmit ? <p>시약 목록을 불러오지 못했습니다. 연결 상태를 확인하세요.</p> : null}
-          </div>
-        </Panel>
       </div>
     </AppShell>
   );

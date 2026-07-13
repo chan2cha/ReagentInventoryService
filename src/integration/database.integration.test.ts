@@ -10,6 +10,7 @@ import {
 } from "../services/order-template-service";
 import { processShipment, reverseShipment } from "../services/shipment-service";
 import { adjustLotStockValue } from "../services/stock-service";
+import { completeReplacement, confirmReplacement } from "../services/replacement-service";
 import {
   listLotExportRows,
   listMovementExportRows
@@ -79,6 +80,7 @@ describe("database transactions", () => {
         await prisma.orderTemplate.deleteMany({ where: { createdBy: userId } });
       }
       if (clientId) {
+        await prisma.replacement.deleteMany({ where: { originalShipmentItem: { shipment: { order: { clientId } } } } });
         await prisma.shipmentItem.deleteMany({ where: { shipment: { order: { clientId } } } });
         await prisma.shipment.deleteMany({ where: { order: { clientId } } });
         await prisma.orderItem.deleteMany({ where: { order: { clientId } } });
@@ -529,5 +531,21 @@ describe("database transactions", () => {
     })).rejects.toThrow("ROLLBACK");
     expect((await prisma.reagentLot.findUniqueOrThrow({ where: { id: lot.id } })).currentQuantity).toBe(beforeQuantity);
     expect(await prisma.auditLog.count({ where: { action: "TEST_ROLLBACK", actorId: userId } })).toBe(0);
+  });
+
+  it("confirms a proactive replacement and ships eligible replacement stock", async () => {
+    const originalLot = await prisma.reagentLot.create({ data: { allergenId, lotNo: `${runId}-replacement-original`, expirationDate: new Date("2030-03-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 2, currentQuantity: 0 } });
+    await prisma.reagentLot.create({ data: { allergenId, lotNo: `${runId}-replacement-new`, expirationDate: new Date("2031-01-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 2, currentQuantity: 2 } });
+    const order = await createOrder(2);
+    await prisma.order.update({ where: { id: order.id }, data: { status: "SHIPPED" } });
+    const shipment = await prisma.shipment.create({ data: { orderId: order.id, shippedBy: userId, purpose: "ORDER" } });
+    const originalItem = await prisma.shipmentItem.create({ data: { shipmentId: shipment.id, reagentLotId: originalLot.id, allergenId, quantity: 2 } });
+
+    const replacement = await confirmReplacement(prisma, { shipmentItemId: originalItem.id, quantity: 1, actorId: userId, now: shipmentNow });
+    const completed = await completeReplacement(prisma, { replacementId: replacement.id, disposition: "CLIENT_DISPOSED", actorId: userId, now: shipmentNow });
+
+    expect(completed).toMatchObject({ status: "COMPLETED", confirmedQuantity: 1, returnDisposition: "CLIENT_DISPOSED" });
+    expect(await prisma.shipment.findUniqueOrThrow({ where: { id: completed.replacementShipmentId! } })).toMatchObject({ purpose: "REPLACEMENT", status: "SHIPPED" });
+    expect(await prisma.stockMovement.count({ where: { refType: "REPLACEMENT", refId: replacement.id, type: "OUT" } })).toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,10 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
-export type SessionPayload = { userId: string; expiresAt: number };
+export type SessionPayload = {
+  userId: string;
+  sessionVersion: number;
+  expiresAt: number;
+};
 
 function sign(body: string, secret: string) {
   return createHmac("sha256", secret).update(body).digest("hex");
@@ -22,7 +26,13 @@ export function decodeSession(value: string, secret: string, now = Date.now()): 
 
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as SessionPayload;
-    if (!payload.userId || typeof payload.expiresAt !== "number" || payload.expiresAt <= now) return null;
+    if (
+      !payload.userId ||
+      !Number.isSafeInteger(payload.sessionVersion) ||
+      payload.sessionVersion < 1 ||
+      typeof payload.expiresAt !== "number" ||
+      payload.expiresAt <= now
+    ) return null;
     return payload;
   } catch {
     return null;

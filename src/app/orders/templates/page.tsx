@@ -8,23 +8,26 @@ import { AppShell } from "@/app/reagent-ui";
 import { TableSearch } from "@/app/table-search";
 import { setOrderTemplateActive } from "./actions";
 import { OrderTemplateForm, type TemplateAllergenOption } from "./order-template-form";
+import { FlashMessage } from "@/app/flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrderTemplatesPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string; success?: string; q?: string }>;
+  searchParams?: Promise<{ q?: string }>;
 }) {
   await requirePageRole(["ADMIN", "ORDER_MANAGER"]);
   const params = await searchParams;
   const query = params?.q?.trim();
-  const [templates, allergens] = await Promise.all([
+  const [templates, allergens, flash] = await Promise.all([
     listOrderTemplates(prisma, { includeInactive: true, q: query }),
     prisma.allergen.findMany({
       select: { id: true, code: true, name: true, isActive: true },
       orderBy: [{ isActive: "desc" }, { category: "asc" }, { code: "asc" }]
-    })
+    }),
+    getFlashMessage()
   ]);
   const allergenOptions: TemplateAllergenOption[] = allergens;
 
@@ -34,8 +37,7 @@ export default async function OrderTemplatesPage({
       title="주문 세트 관리"
       description="자주 주문하는 시약과 기본 수량을 공용 세트로 저장합니다."
     >
-      {params?.error ? <div className="page-alert">{params.error}</div> : null}
-      {params?.success ? <div className="page-alert success">{params.success}</div> : null}
+      <FlashMessage value={flash} />
 
       <div className="template-management-toolbar">
         <TableSearch

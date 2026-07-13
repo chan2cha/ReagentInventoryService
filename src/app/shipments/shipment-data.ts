@@ -5,6 +5,7 @@ import { findAllergen, findClient, formatDate, lots, orderItemSummary, orders } 
 import { lotStatus, type LotStatus, type OrderStatus } from "../reagent-data";
 import { PAGE_SIZE,pageMeta,paginateRows,type PageMeta } from "@/lib/pagination";
 import { pendingShipmentOrderWhere } from "@/domain/pending-shipment";
+import type { ItemQuantity } from "../item-quantity-summary";
 
 export type ShipmentOrderRow = {
   id: string;
@@ -13,8 +14,19 @@ export type ShipmentOrderRow = {
   clientManager: string;
   orderDate: string;
   items: string;
+  itemDetails: ItemQuantity[];
   status: OrderStatus;
   source: "database" | "sample";
+  allocationItems?: ShipmentAllocationItemRow[];
+};
+
+export type ShipmentAllocationItemRow = {
+  id: string;
+  code: string;
+  name: string;
+  quantity: number;
+  availableQuantity: number;
+  lots: Array<{ id: string; lotNo: string; expirationDate: string; currentQuantity: number; recommendedQuantity: number }>;
 };
 
 export type RecommendedLotRow = {
@@ -34,6 +46,7 @@ export type ShipmentHistoryRow = {
   clientName: string;
   shippedAt: string;
   itemSummary: string;
+  itemDetails: ItemQuantity[];
   status: "출고완료" | "취소";
   canCancel: boolean;
   source: "database" | "sample";
@@ -75,6 +88,7 @@ function sampleShipmentOrders(): ShipmentOrderRow[] {
         clientManager: client?.manager ?? "-",
         orderDate: order.orderDate,
         items: orderItemSummary(order),
+        itemDetails: order.items.map((item) => ({ code: findAllergen(item.allergenId)?.code ?? "-", quantity: item.quantity })),
         status: order.status,
         source: "sample"
       };
@@ -124,12 +138,12 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
         { items: { some: { allergen: { is: { code: { contains: orderQ, mode: "insensitive" as const } } } } } }
       ] } : {})
     };
-    const historyWhere = historyQ ? { OR: [
+    const historyWhere = { purpose: "ORDER" as const, ...(historyQ ? { OR: [
       { order: { is: { orderNo: { contains: historyQ, mode: "insensitive" as const } } } },
       { order: { is: { client: { is: { name: { contains: historyQ, mode: "insensitive" as const } } } } } },
       { items: { some: { reagentLot: { is: { allergen: { is: { name: { contains: historyQ, mode: "insensitive" as const } } } } } } } },
       { items: { some: { reagentLot: { is: { allergen: { is: { code: { contains: historyQ, mode: "insensitive" as const } } } } } } } }
-    ] } : {};
+    ] } : {}) };
     const [orderTotal,historyTotal]=await Promise.all([prisma.order.count({where:orderWhere}),prisma.shipment.count({where:historyWhere})]);
     const orderMeta=pageMeta(orderPage,orderTotal); const historyMeta=pageMeta(historyPage,historyTotal);
     const [dbOrders, dbLots, dbShipments] = await Promise.all([
@@ -193,6 +207,17 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
         skip:historyMeta.skip,take:PAGE_SIZE
       })
     ]);
+    const allocationAllergenIds = [...new Set(dbOrders.flatMap((order) => order.items.map((item) => item.allergenId)))];
+    const allocationLots = allocationAllergenIds.length === 0 ? [] : await prisma.reagentLot.findMany({
+      where: {
+        allergenId: { in: allocationAllergenIds },
+        currentQuantity: { gt: 0 },
+        expirationDate: { gte: today },
+        receivedDate: { lt: tomorrow },
+        isActive: true
+      },
+      orderBy: [{ expirationDate: "asc" }, { lotNo: "asc" }]
+    });
 
     return {
       orderMeta,historyMeta,
@@ -203,8 +228,18 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
         clientManager: order.client.managerName ?? "-",
         orderDate: koreaDateKey(order.createdAt),
         items: order.items.map((item) => `${item.allergen.code} ${item.quantity}`).join(", "),
+        itemDetails: order.items.map((item) => ({ code: item.allergen.code, quantity: item.quantity })),
         status: mapOrderStatus(order.status),
-        source: "database"
+        source: "database",
+        allocationItems: order.items.map((item) => {
+          let remaining = item.quantity;
+          const lotsForItem = allocationLots.filter((lot) => lot.allergenId === item.allergenId).map((lot) => {
+            const recommendedQuantity = Math.min(remaining, lot.currentQuantity);
+            remaining -= recommendedQuantity;
+            return { id: lot.id, lotNo: lot.lotNo, expirationDate: lot.expirationDate.toISOString().slice(0, 10), currentQuantity: lot.currentQuantity, recommendedQuantity };
+          });
+          return { id: item.id, code: item.allergen.code, name: item.allergen.name, quantity: item.quantity, availableQuantity: lotsForItem.reduce((sum, lot) => sum + lot.currentQuantity, 0), lots: lotsForItem };
+        })
       })),
       recommendedLots: dbLots.map((lot) => ({
         id: lot.id,
@@ -224,6 +259,7 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
         itemSummary: shipment.items
           .map((item) => `${item.reagentLot.allergen.code} ${item.quantity}`)
           .join(", "),
+        itemDetails: shipment.items.map((item) => ({ code: item.reagentLot.allergen.code, quantity: item.quantity })),
         status: shipment.status === "SHIPPED" ? "출고완료" : "취소",
         canCancel: shipment.status === "SHIPPED",
         source: "database"

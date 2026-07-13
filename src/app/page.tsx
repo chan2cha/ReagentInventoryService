@@ -86,12 +86,16 @@ export default async function Home() {
           </div>
         </Panel>
 
-        <Panel title="시약 분류 현황" note={dashboardSourceLabel(data.categories)}>
-          <div className="category-grid">
-            {data.categories.map((category) => (
-              <div className="category-tile" key={category.category}>
-                <span>{category.category}</span>
-                <strong>{category.count}</strong>
+        <Panel title="선제 교환 현황" note={`${dashboardSourceLabel([data.replacementSummary])} · 교환 관리 기준 적용`}>
+          <div className="category-grid replacement-summary-grid">
+            {[
+              ["확인 대상", data.replacementSummary.candidateCount],
+              ["교환 확정", data.replacementSummary.confirmedCount],
+              ["교환 완료", data.replacementSummary.completedCount]
+            ].map(([label, count]) => (
+              <div className="category-tile" key={label}>
+                <span>{label}</span>
+                <strong>{count}</strong>
               </div>
             ))}
           </div>

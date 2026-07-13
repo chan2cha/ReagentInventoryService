@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { koreaDateKey } from "@/lib/date";
 import {
+  findAllergen,
   findClient,
   formatDate,
   orderItemSummary,
@@ -9,6 +10,7 @@ import {
   type OrderStatus
 } from "../reagent-data";
 import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
+import type { ItemQuantity } from "../item-quantity-summary";
 
 export type OrderRow = {
   id: string;
@@ -17,6 +19,7 @@ export type OrderRow = {
   clientManager: string;
   orderDate: string;
   items: string;
+  itemDetails: ItemQuantity[];
   memo: string;
   status: OrderStatus;
   canCancel: boolean;
@@ -34,6 +37,7 @@ function sampleOrderRows(): OrderRow[] {
       clientManager: client?.manager ?? "-",
       orderDate: order.orderDate,
       items: orderItemSummary(order),
+      itemDetails: order.items.map((item) => ({ code: findAllergen(item.allergenId)?.code ?? "-", quantity: item.quantity })),
       memo: order.memo || "-",
       status: order.status,
       canCancel: order.status === "접수" || order.status === "준비중",
@@ -90,6 +94,7 @@ export async function getOrderRows(page: number, q = ""): Promise<PaginatedResul
       items: order.items
         .map((item) => `${item.allergen.code} ${item.quantity}`)
         .join(", "),
+      itemDetails: order.items.map((item) => ({ code: item.allergen.code, quantity: item.quantity })),
       memo: order.memo || "-",
       status: mapOrderStatus(order.status),
       canCancel: order.status === "RECEIVED" || order.status === "READY_TO_SHIP",

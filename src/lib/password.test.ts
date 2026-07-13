@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashPassword, verifyPassword } from "./password";
+import { hashPassword, verifyLoginPassword, verifyPassword } from "./password";
 
 describe("password hashing", () => {
   it("verifies the correct password and rejects a wrong password", () => {
@@ -11,5 +11,9 @@ describe("password hashing", () => {
   it("rejects malformed hashes", () => {
     expect(verifyPassword("password", "plain-text")).toBe(false);
     expect(verifyPassword("password", "pbkdf2:sha256:0:salt:hash")).toBe(false);
+  });
+
+  it("runs an unknown login through a valid dummy PBKDF2 hash", () => {
+    expect(verifyLoginPassword("any-password", null)).toBe(false);
   });
 });

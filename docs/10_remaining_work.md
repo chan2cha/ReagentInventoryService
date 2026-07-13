@@ -20,12 +20,13 @@ Current state:
 - Newly registered users must change their temporary password.
 - `/account/password` allows users to change their own password.
 - Admins can reset a user's temporary password; existing passwords are not exposed.
+- Unknown, inactive, and wrong-password login attempts use the same PBKDF2 verification path and credential-failure response.
+- Signed sessions carry a server-side `sessionVersion`; password changes, administrator resets, and account deactivation revoke older sessions. A successful self-service password change replaces the current browser's session with the new version.
 
 Remaining tasks:
 
 - Consider redirecting users back to the originally requested route after login.
-- Add server-side session versioning so ordinary password changes and administrator resets revoke previously issued sessions.
-- Add login throttling and constant-cost invalid-credential handling.
+- Login throttling is intentionally not planned because this is an internal-only service; revisit this decision if network exposure changes.
 
 ### Add Role-Based Access
 
@@ -175,7 +176,7 @@ Current state:
 - High-impact operational and account actions require confirmation.
 - Buttons are disabled with an in-progress label during submission.
 - Successful writes show a distinct completion notice.
-- Existing query-string error notices remain in use; replacing these with structured form state is a future enhancement.
+- Success and error notices use a short-lived httpOnly flash cookie and clean-path redirects rather than URL query parameters. The rendered client notice immediately calls the same-origin cleanup endpoint, while the cookie also expires after two minutes as a fallback.
 
 ## Completed: Operational Audit
 
@@ -244,8 +245,8 @@ Current state:
 
 Current tests:
 
-- 144 unit and policy tests run without external services, including encoded Action redirect headers, Next framework-error preservation, reusable order-set validation/services/actions, active-reagent policy, single-set row provenance and transitions, lean form projection, real-data sidebar shipment count/failure fallback, inventory-screen search/status pagination and status precedence, movement-screen search/type predicate reuse, export filters/date boundaries, movement delta rules, workbook formatting, download authorization, repeatable-read invocation, report-specific parameter rejection, structured audit details, row/text/file limits, and audit-before-release behavior.
-- All 12 PostgreSQL integration tests pass against the isolated `TEST_DATABASE_URL`, including concurrent shipment, reversal, order-cancellation, stock-adjustment, reusable order-set lifecycle/version/audit, concurrent order-number scenarios, and filtered export/reference resolution.
+- 156 unit and policy tests run without external services, including version-bound session revocation, constant-cost invalid-credential handling, encoded Action redirect headers, Next framework-error preservation, reusable order-set validation/services/actions, active-reagent policy, single-set row provenance and transitions, lean form projection, real-data sidebar shipment count/failure fallback, inventory-screen search/status pagination and status precedence, movement-screen search/type predicate reuse, export filters/date boundaries, movement delta rules, workbook formatting, download authorization, repeatable-read invocation, report-specific parameter rejection, structured audit details, row/text/file limits, and audit-before-release behavior.
+- All 13 PostgreSQL integration tests pass against the isolated `TEST_DATABASE_URL`, including concurrent shipment, reversal, order-cancellation, stock-adjustment, proactive replacement confirmation/eligible-LOT shipment/audit, reusable order-set lifecycle/version/audit, concurrent order-number scenarios, and filtered export/reference resolution.
 - The integration suite blocks execution when the test and operational DB targets match.
 - A built-server E2E verifies that an authenticated write Action commits, returns `303`, emits an ASCII-safe redirect header, and preserves the decoded Korean success message.
 - A built production server against the isolated database verifies unauthenticated `401` behavior and authenticated combined XLSX sheet contents, stock delta, required audit creation, and complete fixture cleanup.
@@ -279,4 +280,4 @@ Tasks:
 
 1. Deploy or restart the verified application artifact in the actual hosting environment and run the browser-level order-set workflow smoke test.
 2. Check for and, if necessary, retire the historical seed administrator before release.
-3. Continue with audit completeness, strict shared validation, login throttling, and session revocation work.
+3. Continue with audit completeness, strict shared validation, and authorization regression coverage.

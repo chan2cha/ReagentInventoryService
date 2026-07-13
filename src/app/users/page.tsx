@@ -6,19 +6,19 @@ import { getUserRows, roleOptions } from "./user-data";
 import { RegistrationDialog } from "../registration-dialog";
 import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
 import { TableSearch } from "../table-search";
+import { FlashMessage } from "../flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage({
   searchParams
 }: {
-  searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }>;
+  searchParams?: Promise<{ page?: string; q?: string }>;
 }) {
   await requirePageRole(["ADMIN"]);
 
-  const params=await searchParams; const data=await getUserRows(parsePage(params?.page), params?.q?.trim()); const users=data.rows;
-  const error = params?.error;
-  const success = params?.success;
+  const params=await searchParams; const [data, flash]=await Promise.all([getUserRows(parsePage(params?.page), params?.q?.trim()), getFlashMessage()]); const users=data.rows;
 
   return (
     <AppShell
@@ -26,8 +26,7 @@ export default async function UsersPage({
       title="사용자 관리"
       description="내부 사용자 계정과 업무 권한을 관리합니다."
     >
-      {error ? <div className="page-alert">{error}</div> : null}
-      {success ? <div className="page-alert success">{success}</div> : null}
+      <FlashMessage value={flash} />
 
       <div className="page-toolbar"><RegistrationDialog title="사용자 등록" triggerLabel="사용자 등록"><form action={createUser} className="entry-form compact-entry-form"><label>아이디<input name="loginId" placeholder="예: order01" required /></label><label>이름<input name="name" placeholder="사용자 이름" required /></label><label>임시 비밀번호<input minLength={8} name="password" placeholder="8자 이상" required type="password" /></label><label>역할<select defaultValue="VIEWER" name="role" required>{roleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></label><label>이메일<input name="email" placeholder="선택 입력" type="email" /></label><div className="form-actions"><SubmitButton className="primary-button" pendingLabel="등록 중...">등록</SubmitButton></div></form></RegistrationDialog></div>
       <TableSearch pathname="/users" placeholder="아이디, 이름, 이메일 검색" value={params?.q} />

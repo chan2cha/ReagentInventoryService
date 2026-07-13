@@ -5,17 +5,18 @@ import { createAllergen, toggleAllergenActive, updateAllergen } from "./actions"
 import { allergenSourceLabel, getAllergenRows } from "./allergen-data";
 import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
 import { TableSearch } from "../table-search";
+import { FlashMessage } from "../flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
 
 export const dynamic = "force-dynamic";
 
-export default async function AllergensPage({ searchParams }: { searchParams?: Promise<{ error?: string; success?: string; page?: string; q?: string }> }) {
-  const params=await searchParams; const [user,data]=await Promise.all([requireUser(),getAllergenRows(parsePage(params?.page), params?.q?.trim())]); const allergenRows=data.rows;
+export default async function AllergensPage({ searchParams }: { searchParams?: Promise<{ page?: string; q?: string }> }) {
+  const params=await searchParams; const [user,data,flash]=await Promise.all([requireUser(),getAllergenRows(parsePage(params?.page), params?.q?.trim()),getFlashMessage()]); const allergenRows=data.rows;
   const canManage = user.role === "ADMIN";
 
   return (
     <AppShell active="/allergens" title="시약 관리" description="검사 시약과 안전 수량 기준을 관리합니다.">
-      {params?.error ? <div className="page-alert">{params.error}</div> : null}
-      {params?.success ? <div className="page-alert success">{params.success}</div> : null}
+      <FlashMessage value={flash} />
 
       <TableSearch pathname="/allergens" placeholder="시약 코드, 시약명, 분류 검색" value={params?.q} />
       <div className={canManage ? "form-layout master-data-layout" : undefined}>

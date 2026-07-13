@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
-import { buildActionMessageUrl } from "@/lib/action-message-url";
+import { redirectWithFlash } from "@/lib/flash-message";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -18,8 +18,8 @@ function formString(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function fail(message: string): never {
-  redirect(buildActionMessageUrl(TEMPLATE_PATH, "error", message) as never);
+async function fail(message: string): Promise<never> {
+  return redirectWithFlash(TEMPLATE_PATH, "error", message);
 }
 
 function templateItems(formData: FormData) {
@@ -88,11 +88,11 @@ export async function createOrderTemplate(formData: FormData) {
     });
   } catch (error) {
     unstable_rethrow(error);
-    fail(templateErrorMessage(error));
+    await fail(templateErrorMessage(error));
   }
 
   revalidateTemplatePaths();
-  redirect(buildActionMessageUrl(TEMPLATE_PATH, "success", "주문 세트가 등록되었습니다.") as never);
+  await redirectWithFlash(TEMPLATE_PATH, "success", "주문 세트가 등록되었습니다.");
 }
 
 export async function updateOrderTemplate(formData: FormData) {
@@ -112,11 +112,11 @@ export async function updateOrderTemplate(formData: FormData) {
     });
   } catch (error) {
     unstable_rethrow(error);
-    fail(templateErrorMessage(error));
+    await fail(templateErrorMessage(error));
   }
 
   revalidateTemplatePaths();
-  redirect(buildActionMessageUrl(TEMPLATE_PATH, "success", "주문 세트가 수정되었습니다.") as never);
+  await redirectWithFlash(TEMPLATE_PATH, "success", "주문 세트가 수정되었습니다.");
 }
 
 export async function setOrderTemplateActive(formData: FormData) {
@@ -137,13 +137,13 @@ export async function setOrderTemplateActive(formData: FormData) {
     await setTemplateActive(prisma, { id, expectedVersion, isActive, actorId: user.id });
   } catch (error) {
     unstable_rethrow(error);
-    fail(templateErrorMessage(error));
+    await fail(templateErrorMessage(error));
   }
 
   revalidateTemplatePaths();
-  redirect(buildActionMessageUrl(
+  await redirectWithFlash(
     TEMPLATE_PATH,
     "success",
     isActive ? "주문 세트가 활성화되었습니다." : "주문 세트가 비활성화되었습니다."
-  ) as never);
+  );
 }

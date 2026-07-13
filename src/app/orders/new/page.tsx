@@ -2,20 +2,17 @@ import { requirePageRole } from "@/lib/auth";
 import { AppShell, Panel } from "../../reagent-ui";
 import { OrderForm } from "./order-form";
 import { getOrderFormData } from "./order-form-data";
+import { FlashMessage } from "@/app/flash-message";
+import { getFlashMessage } from "@/lib/flash-message";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewOrderPage({
-  searchParams
-}: {
-  searchParams?: Promise<{ error?: string }>;
-}) {
-  const [{ clients, allergens, templates, templateLoadFailed }, params] = await Promise.all([
+export default async function NewOrderPage() {
+  const [{ clients, allergens, templates, templateLoadFailed }, flash] = await Promise.all([
     getOrderFormData(),
-    searchParams,
+    getFlashMessage(),
     requirePageRole(["ADMIN", "ORDER_MANAGER"])
   ]);
-  const error = params?.error;
   const canSubmit = clients.length > 0 && allergens.length > 0;
 
   return (
@@ -26,7 +23,7 @@ export default async function NewOrderPage({
     >
       <div className="form-layout">
         <Panel title="주문 정보" note="최신 정보">
-          {error ? <div className="form-alert">{error}</div> : null}
+          <FlashMessage form value={flash} />
           <OrderForm
             allergens={allergens}
             clients={clients}

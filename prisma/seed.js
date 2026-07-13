@@ -242,6 +242,7 @@ async function replaceLegacySeedAdmin(existing) {
         loginId: `retired-legacy-admin-${current.id}`,
         passwordHash: hashPassword(randomBytes(32).toString("hex")),
         isActive: false,
+        sessionVersion: { increment: 1 },
         mustChangePassword: true
       }
     });

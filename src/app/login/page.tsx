@@ -1,26 +1,22 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import { SubmitButton } from "@/app/submit-button";
+import { FlashMessage } from "@/app/flash-message";
 import { getCurrentUser } from "@/lib/auth";
+import { getFlashMessage } from "@/lib/flash-message";
 import { login } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage({
-  searchParams
-}: {
-  searchParams?: Promise<{ error?: string }>;
-}) {
-  const [user, params] = await Promise.all([
+export default async function LoginPage() {
+  const [user, flash] = await Promise.all([
     getCurrentUser(),
-    searchParams
+    getFlashMessage()
   ]);
 
   if (user) {
     redirect("/");
   }
-
-  const error = params?.error;
 
   return (
     <main className="login-page">
@@ -40,7 +36,7 @@ export default async function LoginPage({
           <strong className="login-system-title">시약 재고 관리 시스템</strong>
         </div>
 
-        {error ? <div className="form-alert">{error}</div> : null}
+        <FlashMessage form value={flash} />
 
         <form action={login} className="login-form">
           <label>
