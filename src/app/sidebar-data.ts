@@ -1,5 +1,7 @@
 import "server-only";
 
+/** 사이드바 배지는 요청마다 필요한 미처리 업무 건수만 가볍게 집계한다. */
+
 import { pendingShipmentOrderWhere } from "@/domain/pending-shipment";
 import { addDateOnlyDays, koreaDateKey } from "@/lib/date";
 import { prisma } from "@/lib/prisma";
@@ -12,18 +14,18 @@ export type SidebarData = {
 
 export async function getSidebarData(): Promise<SidebarData> {
   try {
-    const policy = await getReplacementPolicy(prisma);
-    const replacementThreshold = addDateOnlyDays(koreaDateKey(), policy.detectionDays);
-    const [pendingShipments, replacementCandidates] = await Promise.all([
-      prisma.order.count({ where: pendingShipmentOrderWhere() }),
-      prisma.shipmentItem.count({
-        where: {
-          shipment: { status: "SHIPPED", purpose: "ORDER" },
-          reagentLot: { expirationDate: { lte: replacementThreshold } },
-          replacement: { is: null }
-        }
-      })
+    const [policy, pendingShipments] = await Promise.all([
+      getReplacementPolicy(prisma),
+      prisma.order.count({ where: pendingShipmentOrderWhere() })
     ]);
+    const replacementThreshold = addDateOnlyDays(koreaDateKey(), policy.detectionDays);
+    const replacementCandidates = await prisma.shipmentItem.count({
+      where: {
+        shipment: { status: "SHIPPED", purpose: "ORDER" },
+        reagentLot: { expirationDate: { lte: replacementThreshold } },
+        replacement: { is: null }
+      }
+    });
 
     return { pendingShipments, replacementCandidates };
   } catch (error) {

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { redirectWithFlash } from "@/lib/flash-message";
+import { formString, formStrings } from "@/lib/form-data";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -13,23 +14,18 @@ import {
 
 const TEMPLATE_PATH = "/orders/templates";
 
-function formString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
-
 async function fail(message: string): Promise<never> {
   return redirectWithFlash(TEMPLATE_PATH, "error", message);
 }
 
 function templateItems(formData: FormData) {
-  const allergenIds = formData.getAll("allergenId");
-  const quantities = formData.getAll("quantity");
+  const allergenIds = formStrings(formData, "allergenId");
+  const quantities = formStrings(formData, "quantity");
   const itemCount = Math.max(allergenIds.length, quantities.length);
 
   return Array.from({ length: itemCount }, (_, position) => ({
-    allergenId: typeof allergenIds[position] === "string" ? allergenIds[position].trim() : "",
-    quantity: typeof quantities[position] === "string" ? quantities[position].trim() : "",
+    allergenId: allergenIds[position] ?? "",
+    quantity: quantities[position] ?? "",
     position
   }));
 }

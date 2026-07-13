@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { PAGE_SIZE, pageMeta } from "@/lib/pagination";
 
@@ -16,14 +17,21 @@ const actionLabels: Record<string, string> = {
 
 export async function getAuditRows(requestedPage: number, q = "") {
   const where = q ? { OR: [{ action: { contains: q, mode: "insensitive" as const } }, { description: { contains: q, mode: "insensitive" as const } }, { actor: { is: { name: { contains: q, mode: "insensitive" as const } } } }] } : {};
-  const total = await prisma.auditLog.count({ where });
-  const meta = pageMeta(requestedPage, total);
-  const rows = await prisma.auditLog.findMany({
+  const requestedSkip = (Math.max(1, requestedPage) - 1) * PAGE_SIZE;
+  const auditQuery = {
     where, include: { actor: { select: { name: true, loginId: true } } },
     orderBy: { createdAt: "desc" },
-    skip: meta.skip,
+    skip: requestedSkip,
     take: PAGE_SIZE
-  });
+  } satisfies Prisma.AuditLogFindManyArgs;
+  const [total, initialRows] = await Promise.all([
+    prisma.auditLog.count({ where }),
+    prisma.auditLog.findMany(auditQuery)
+  ]);
+  const meta = pageMeta(requestedPage, total);
+  const rows = meta.skip === requestedSkip
+    ? initialRows
+    : await prisma.auditLog.findMany({ ...auditQuery, skip: meta.skip });
 
   return { ...meta, rows: rows.map((row) => ({
     id: row.id,

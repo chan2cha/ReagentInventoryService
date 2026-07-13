@@ -4,16 +4,12 @@ import type { UserRole } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { redirectWithFlash } from "@/lib/flash-message";
+import { formString } from "@/lib/form-data";
 import { requireRole } from "@/lib/auth";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 
 const allowedRoles: UserRole[] = ["ADMIN", "ORDER_MANAGER", "SHIPMENT_MANAGER", "VIEWER"];
-
-function formString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
 
 async function fail(message: string): Promise<never> {
   return redirectWithFlash("/users", "error", message);

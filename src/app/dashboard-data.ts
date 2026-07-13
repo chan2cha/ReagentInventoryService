@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+
+/** 대시보드의 서로 독립적인 요약 지표를 읽고, 개발 환경에서만 샘플 데이터로 대체한다. */
 import { handleDataSourceError } from "@/lib/data-source";
 import { addDateOnlyDays, dateOnlyUtc, daysUntilDateOnly, koreaDateKey, koreaDayRange } from "@/lib/date";
 import { pendingShipmentOrderWhere } from "@/domain/pending-shipment";

@@ -1,12 +1,13 @@
 import type { Prisma, PrismaClient, ReturnDisposition } from "@prisma/client";
+import { cache } from "react";
 import { addDateOnlyDays, koreaDateKey, koreaDatePrefix } from "../lib/date";
 import { RetryableTransactionError, runSerializableTransaction } from "../lib/transaction";
 
 export const REPLACEMENT_POLICY_ID = "default";
 
-export async function getReplacementPolicy(db: Pick<PrismaClient, "replacementPolicy">) {
+export const getReplacementPolicy = cache(async (db: Pick<PrismaClient, "replacementPolicy">) => {
   return db.replacementPolicy.findUniqueOrThrow({ where: { id: REPLACEMENT_POLICY_ID } });
-}
+});
 
 async function nextReplacementNo(tx: Prisma.TransactionClient, now: Date) {
   const prefix = `REP-${koreaDatePrefix(now)}-`;
@@ -101,10 +102,25 @@ export async function completeReplacement(db: PrismaClient, input: {
       purpose: "REPLACEMENT", status: "SHIPPED", shippedBy: input.actorId,
       memo: `${replacement.replacementNo} 선제 교환 출고`
     }});
-    for (const allocation of allocations) {
-      await tx.shipmentItem.create({ data: { shipmentId: shipment.id, reagentLotId: allocation.id, allergenId: replacement.originalShipmentItem.allergenId, quantity: allocation.quantity } });
-      await tx.stockMovement.create({ data: { reagentLotId: allocation.id, type: "OUT", quantity: allocation.quantity, reason: `${replacement.replacementNo} 선제 교환`, refType: "REPLACEMENT", refId: replacement.id, createdBy: input.actorId } });
-    }
+    await tx.shipmentItem.createMany({
+      data: allocations.map((allocation) => ({
+        shipmentId: shipment.id,
+        reagentLotId: allocation.id,
+        allergenId: replacement.originalShipmentItem.allergenId,
+        quantity: allocation.quantity
+      }))
+    });
+    await tx.stockMovement.createMany({
+      data: allocations.map((allocation) => ({
+        reagentLotId: allocation.id,
+        type: "OUT" as const,
+        quantity: allocation.quantity,
+        reason: `${replacement.replacementNo} 선제 교환`,
+        refType: "REPLACEMENT",
+        refId: replacement.id,
+        createdBy: input.actorId
+      }))
+    });
     const completed = await tx.replacement.update({ where: { id: replacement.id }, data: {
       status: "COMPLETED", returnDisposition: input.disposition,
       replacementShipmentId: shipment.id, completedBy: input.actorId, completedAt: now

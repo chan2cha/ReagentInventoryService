@@ -21,6 +21,7 @@ import { logout } from "@/app/logout/actions";
 import { requireUser } from "@/lib/auth";
 import { can, type Capability } from "@/lib/access";
 import { formatKoreaDateTime } from "@/lib/date";
+import companyLogo from "@/lib/logo.png.png";
 import type { StockMovementLabel } from "@/domain/stock-movement-presentation";
 import { ProgressLink } from "./progress-link";
 import { formatSidebarBadge, getSidebarData } from "./sidebar-data";
@@ -49,21 +50,48 @@ type ShellProps = {
 type AppRoute = "/" | "/lots" | "/receiving" | "/orders" | "/orders/templates" | "/shipments" | "/replacements" | "/clients" | "/allergens" | "/movements" | "/exports" | "/audit" | "/users" | "/account/password" | "/access-denied";
 type ActionRoute = AppRoute | "/orders/new";
 
-const navItems: Array<{ href: AppRoute; label: string; icon: LucideIcon; capability?: Capability }> = [
-  { href: "/", label: "업무 현황", icon: Gauge },
-  { href: "/lots", label: "재고 현황", icon: Boxes },
-  { href: "/receiving", label: "입고 등록", icon: PackagePlus, capability: "STOCK_WRITE" },
-  { href: "/orders", label: "주문 관리", icon: ClipboardList },
-  { href: "/orders/templates", label: "주문 세트", icon: Layers, capability: "ORDER_TEMPLATE_WRITE" },
-  { href: "/shipments", label: "출고 처리", icon: PackageCheck },
-  { href: "/replacements", label: "선제 교환", icon: RefreshCw, capability: "SHIPMENT_WRITE" },
-  { href: "/clients", label: "거래처", icon: Building2 },
-  { href: "/allergens", label: "시약 관리", icon: FlaskConical },
-  { href: "/movements", label: "입출고 이력", icon: History },
-  { href: "/exports", label: "자료 내보내기", icon: FileSpreadsheet, capability: "DATA_EXPORT" },
-  { href: "/audit", label: "감사 로그", icon: ScrollText, capability: "AUDIT_READ" },
-  { href: "/account/password", label: "비밀번호 변경", icon: KeyRound },
-  { href: "/users", label: "사용자 관리", icon: ShieldCheck, capability: "USER_ADMIN" }
+type NavItem = { href: AppRoute; label: string; icon: LucideIcon; capability?: Capability };
+
+type NavGroup = {
+  label: string;
+  items: NavItem[];
+};
+
+const navGroups: NavGroup[] = [
+  { label: "업무 현황", items: [{ href: "/", label: "업무 현황", icon: Gauge }] },
+  {
+    label: "재고 운영",
+    items: [
+      { href: "/lots", label: "재고 현황", icon: Boxes },
+      { href: "/receiving", label: "입고 등록", icon: PackagePlus, capability: "STOCK_WRITE" },
+      { href: "/movements", label: "입출고 이력", icon: History }
+    ]
+  },
+  {
+    label: "주문·출고",
+    items: [
+      { href: "/orders", label: "주문 관리", icon: ClipboardList },
+      { href: "/orders/templates", label: "주문 세트", icon: Layers, capability: "ORDER_TEMPLATE_WRITE" },
+      { href: "/shipments", label: "출고 처리", icon: PackageCheck },
+      { href: "/replacements", label: "선제 교환", icon: RefreshCw, capability: "SHIPMENT_WRITE" }
+    ]
+  },
+  {
+    label: "기준 정보",
+    items: [
+      { href: "/clients", label: "거래처", icon: Building2 },
+      { href: "/allergens", label: "시약 관리", icon: FlaskConical }
+    ]
+  },
+  {
+    label: "관리·지원",
+    items: [
+      { href: "/exports", label: "자료 내보내기", icon: FileSpreadsheet, capability: "DATA_EXPORT" },
+      { href: "/audit", label: "감사 로그", icon: ScrollText, capability: "AUDIT_READ" },
+      { href: "/users", label: "사용자 관리", icon: ShieldCheck, capability: "USER_ADMIN" },
+      { href: "/account/password", label: "비밀번호 변경", icon: KeyRound }
+    ]
+  }
 ];
 
 const roleLabels = {
@@ -90,7 +118,7 @@ export async function AppShell({ active, title, description, action, actionHref,
     <div className="app-shell">
       <aside className="app-sidebar">
         <ProgressLink className="brand-block" href="/">
-          <Image alt="신영라파마" height={48} priority src="/logo.png" width={177} />
+          <Image alt="신영로파마" height={48} priority src={companyLogo} width={177} />
           <span>
             <strong>시약 재고 관리 시스템</strong>
             <small>SHINYOUNG Lofarma</small>
@@ -98,33 +126,40 @@ export async function AppShell({ active, title, description, action, actionHref,
         </ProgressLink>
 
         <nav className="side-nav" aria-label="메뉴">
-          {navItems.filter((item) => !item.capability || can(user.role, item.capability)).map((item) => {
-            const Icon = item.icon;
+          {navGroups.map((group) => {
+            const visibleItems = group.items.filter((item) => !item.capability || can(user.role, item.capability));
+
+            if (visibleItems.length === 0) return null;
+
             return (
-              <ProgressLink
-                className={item.href === active ? "active" : ""}
-                href={item.href as never}
-                key={item.href}
-              >
-                <span className="nav-mark"><Icon aria-hidden="true" size={17} strokeWidth={2} /></span>
-                <span>{item.label}</span>
-                {item.href === "/shipments" && pendingShipmentBadge ? (
-                  <em
-                    aria-label={`출고 대기 ${sidebarData.pendingShipments}건`}
-                    title={`출고 대기 ${sidebarData.pendingShipments}건`}
-                  >
-                    {pendingShipmentBadge}
-                  </em>
-                ) : null}
-                {item.href === "/replacements" && replacementCandidateBadge ? (
-                  <em
-                    aria-label={`선제 교환 확인 대상 ${sidebarData.replacementCandidates}건`}
-                    title={`선제 교환 확인 대상 ${sidebarData.replacementCandidates}건`}
-                  >
-                    {replacementCandidateBadge}
-                  </em>
-                ) : null}
-              </ProgressLink>
+              <section className="nav-group" key={group.label}>
+                <h2 className="nav-group-title">{group.label}</h2>
+                <div className="nav-group-items">
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <ProgressLink
+                        className={item.href === active ? "active" : ""}
+                        href={item.href as never}
+                        key={item.href}
+                      >
+                        <span className="nav-mark"><Icon aria-hidden="true" size={17} strokeWidth={2} /></span>
+                        <span>{item.label}</span>
+                        {item.href === "/shipments" && pendingShipmentBadge ? (
+                          <em aria-label={`출고 대기 ${sidebarData.pendingShipments}건`} title={`출고 대기 ${sidebarData.pendingShipments}건`}>
+                            {pendingShipmentBadge}
+                          </em>
+                        ) : null}
+                        {item.href === "/replacements" && replacementCandidateBadge ? (
+                          <em aria-label={`선제 교환 확인 대상 ${sidebarData.replacementCandidates}건`} title={`선제 교환 확인 대상 ${sidebarData.replacementCandidates}건`}>
+                            {replacementCandidateBadge}
+                          </em>
+                        ) : null}
+                      </ProgressLink>
+                    );
+                  })}
+                </div>
+              </section>
             );
           })}
         </nav>

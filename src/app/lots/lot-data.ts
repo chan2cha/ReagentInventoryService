@@ -1,8 +1,9 @@
 import type { Prisma } from "@prisma/client";
+
+/** LOT 목록의 DB 행을 화면 행으로 변환하고 상태별 페이지 조회를 담당한다. */
 import { buildLotWhere } from "@/domain/export-filters";
 import {
   lotStatusFromSnapshot,
-  lotStatusKindFromSnapshot,
   lotStatusLabel,
   lotStatusRequiresCrossModelComparison,
   type LotStatusKind,
@@ -11,9 +12,12 @@ import {
 import { handleDataSourceError } from "@/lib/data-source";
 import { prisma } from "@/lib/prisma";
 import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
+import {
+  countStatusFilteredLots,
+  listStatusFilteredLots,
+  type StatusFilteredLotRecord
+} from "@/services/status-filtered-lot-query";
 import { findAllergen, formatDate, lots } from "../reagent-data";
-
-const STATUS_SCAN_BATCH_SIZE = 500;
 
 export type LotRow = {
   id: string;
@@ -52,6 +56,22 @@ const lotRowOrder = [
 ];
 
 type DatabaseLotRow = Prisma.ReagentLotGetPayload<{ select: typeof lotRowSelect }>;
+
+function statusFilteredRecordToLot(record: StatusFilteredLotRecord): DatabaseLotRow {
+  return {
+    id: record.id,
+    lotNo: record.lotNo,
+    receivedDate: record.receivedDate,
+    expirationDate: record.expirationDate,
+    currentQuantity: record.currentQuantity,
+    initialQuantity: record.initialQuantity,
+    allergen: {
+      name: record.allergenName,
+      code: record.allergenCode,
+      minStock: record.minStock
+    }
+  };
+}
 
 function toDateInput(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -119,50 +139,25 @@ function sampleLotRows(q = "", status?: LotStatusKind, now = new Date()): LotRow
 
 async function getStatusFilteredRows(
   requestedPage: number,
-  where: Prisma.ReagentLotWhereInput,
+  q: string,
   status: LotStatusKind,
   now: Date
 ): Promise<PaginatedResult<LotRow>> {
+  // LOW_STOCK/NORMAL은 관계 테이블의 최소재고 비교가 필요하므로 전용 SQL을 사용한다.
   const normalizedRequestedPage = Math.max(1, requestedPage);
   const requestedSkip = (normalizedRequestedPage - 1) * PAGE_SIZE;
-  const requestedRows: LotRow[] = [];
-  const lastRows: LotRow[] = [];
-  let cursor: string | undefined;
-  let total = 0;
-
-  while (true) {
-    const candidates = await prisma.reagentLot.findMany({
-      where,
-      select: lotRowSelect,
-      orderBy: lotRowOrder,
-      take: STATUS_SCAN_BATCH_SIZE,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {})
-    });
-
-    for (const lot of candidates) {
-      if (lotStatusKindFromSnapshot(statusSnapshot(lot), now) !== status) continue;
-
-      const row = toLotRow(lot, now);
-      if (total >= requestedSkip && requestedRows.length < PAGE_SIZE) {
-        requestedRows.push(row);
-      }
-
-      lastRows.push(row);
-      if (lastRows.length > PAGE_SIZE) lastRows.shift();
-      total += 1;
-    }
-
-    if (candidates.length < STATUS_SCAN_BATCH_SIZE) break;
-    cursor = candidates[candidates.length - 1].id;
-  }
+  const queryOptions = { q, status: status as Extract<LotStatusKind, "LOW_STOCK" | "NORMAL">, now };
+  const [total, initialRecords] = await Promise.all([
+    countStatusFilteredLots(prisma, queryOptions),
+    listStatusFilteredLots(prisma, { ...queryOptions, skip: requestedSkip, take: PAGE_SIZE })
+  ]);
 
   const meta = pageMeta(normalizedRequestedPage, total);
-  if (meta.page === normalizedRequestedPage) {
-    return { ...meta, rows: requestedRows };
-  }
+  const records = meta.skip === requestedSkip
+    ? initialRecords
+    : await listStatusFilteredLots(prisma, { ...queryOptions, skip: meta.skip, take: PAGE_SIZE });
 
-  const lastPageSize = total - meta.skip;
-  return { ...meta, rows: lastRows.slice(Math.max(0, lastRows.length - lastPageSize)) };
+  return { ...meta, rows: records.map((record) => toLotRow(statusFilteredRecordToLot(record), now)) };
 }
 
 export async function getLotRows(
@@ -175,18 +170,25 @@ export async function getLotRows(
     const where = buildLotWhere({ q, status }, now);
 
     if (status && lotStatusRequiresCrossModelComparison(status)) {
-      return await getStatusFilteredRows(page, where, status, now);
+      return await getStatusFilteredRows(page, q, status, now);
     }
 
-    const total = await prisma.reagentLot.count({ where });
-    const meta = pageMeta(page, total);
-    const dbLots = await prisma.reagentLot.findMany({
+    const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
+    const lotQuery = {
       where,
       select: lotRowSelect,
       orderBy: lotRowOrder,
-      skip: meta.skip,
+      skip: requestedSkip,
       take: PAGE_SIZE
-    });
+    } satisfies Prisma.ReagentLotFindManyArgs;
+    const [total, initialLots] = await Promise.all([
+      prisma.reagentLot.count({ where }),
+      prisma.reagentLot.findMany(lotQuery)
+    ]);
+    const meta = pageMeta(page, total);
+    const dbLots = meta.skip === requestedSkip
+      ? initialLots
+      : await prisma.reagentLot.findMany({ ...lotQuery, skip: meta.skip });
 
     return { ...meta, rows: dbLots.map((lot) => toLotRow(lot, now)) };
   } catch (error) {

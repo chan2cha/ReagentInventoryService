@@ -1,16 +1,14 @@
 "use server";
 
+/** 주문 취소 요청의 권한·입력 검증과 화면 갱신을 담당한다. */
+
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { redirectWithFlash } from "@/lib/flash-message";
+import { formString } from "@/lib/form-data";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cancelPendingOrder } from "@/services/order-service";
-
-function formString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
 
 async function fail(message: string): Promise<never> {
   return redirectWithFlash("/orders", "error", message);

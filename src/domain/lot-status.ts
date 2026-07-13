@@ -1,5 +1,7 @@
 import { daysUntilDateOnly } from "../lib/date";
 
+/** LOT 상태의 표시 순서와 판정 규칙이다. 만료·품절·임박 상태가 재고 상태보다 우선한다. */
+
 export const LOT_STATUS_KINDS = [
   "NORMAL",
   "LOW_STOCK",

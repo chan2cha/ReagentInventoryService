@@ -1,22 +1,24 @@
 "use client";
 
-import { X } from "lucide-react";
-import { useRef } from "react";
+/** 주문별 출고 수량을 입력하고, 서비스가 계산한 LOT 배정 결과를 사용자에게 안내한다. */
+
 import type { ShipmentOrderRow } from "./shipment-data";
 import { confirmShipment } from "./actions";
 import { SubmitButton } from "../submit-button";
+import { DialogFrame } from "../dialog-frame";
 
 export function ShipmentAllocationDialog({ order }: { order: ShipmentOrderRow }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const items = order.allocationItems ?? [];
 
-  return <>
-    <button className="table-action" disabled={order.source !== "database" || items.length === 0} onClick={() => dialogRef.current?.showModal()} type="button">출고 진행</button>
-    <dialog className="registration-dialog shipment-allocation-dialog" onClick={(event) => { if (event.target === event.currentTarget) dialogRef.current?.close(); }} ref={dialogRef}>
-      <header>
-        <div><p className="eyebrow">SHIPMENT ALLOCATION</p><h2>출고 LOT 배정</h2><span>{order.orderNo} · {order.clientName}</span></div>
-        <button aria-label="닫기" className="dialog-close" onClick={() => dialogRef.current?.close()} type="button"><X size={19} /></button>
-      </header>
+  return <DialogFrame
+    className="shipment-allocation-dialog"
+    eyebrow="SHIPMENT ALLOCATION"
+    subtitle={<span>{order.orderNo} · {order.clientName}</span>}
+    title="출고 LOT 배정"
+    triggerClassName="table-action"
+    triggerDisabled={order.source !== "database" || items.length === 0}
+    triggerLabel="출고 진행"
+  >
       <form action={confirmShipment} className="shipment-allocation-form">
         <input name="orderId" type="hidden" value={order.id} />
         <p className="allocation-intro">유통기한이 빠른 LOT부터 수량을 제안합니다. 실제 출고할 LOT와 수량을 확인·수정한 뒤 확정하세요. 품목별 배정 합계는 주문 수량과 같아야 합니다.</p>
@@ -27,8 +29,7 @@ export function ShipmentAllocationDialog({ order }: { order: ShipmentOrderRow })
             {item.lots.length === 0 ? <tr><td colSpan={5}>출고 가능한 LOT가 없습니다.</td></tr> : null}
           </tbody></table></div>
         </section>)}
-        <div className="allocation-actions"><button className="secondary-button" onClick={() => dialogRef.current?.close()} type="button">취소</button><SubmitButton className="primary-button" confirmMessage="표시된 LOT와 수량으로 출고를 확정하시겠습니까?">출고 확정</SubmitButton></div>
+        <div className="allocation-actions"><button className="secondary-button" data-dialog-close type="button">취소</button><SubmitButton className="primary-button" confirmMessage="표시된 LOT와 수량으로 출고를 확정하시겠습니까?">출고 확정</SubmitButton></div>
       </form>
-    </dialog>
-  </>;
+  </DialogFrame>;
 }

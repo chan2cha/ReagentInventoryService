@@ -10,7 +10,6 @@ import {
 } from "../domain/export-filters";
 import {
   lotStatusFromSnapshot,
-  lotStatusKindFromSnapshot,
   lotStatusRequiresCrossModelComparison,
   type LotStatusKind,
   type LotStatusLabel
@@ -21,10 +20,13 @@ import {
   type StockMovementKind,
   type StockMovementLabel
 } from "../domain/stock-movement-presentation";
+import {
+  listStatusFilteredLots,
+  type StatusFilteredLotRecord
+} from "./status-filtered-lot-query";
 
 export const EXPORT_ROW_LIMIT = 10_000;
 export const EXPORT_QUERY_TAKE = EXPORT_ROW_LIMIT + 1;
-const EXPORT_STATUS_SCAN_BATCH_SIZE = 1_000;
 
 export type ExportDatabaseClient = PrismaClient | Prisma.TransactionClient;
 
@@ -148,38 +150,6 @@ function assertWithinExportLimit(dataset: ExportDataset, rowCount: number) {
   }
 }
 
-async function listStatusFilteredLotRecords(
-  db: ExportDatabaseClient,
-  where: Prisma.ReagentLotWhereInput,
-  status: LotStatusKind,
-  now: Date
-) {
-  const matching: LotExportRecord[] = [];
-  let cursor: string | undefined;
-
-  while (true) {
-    const candidates = await db.reagentLot.findMany({
-      where,
-      select: lotExportSelect,
-      orderBy: lotExportOrder,
-      take: EXPORT_STATUS_SCAN_BATCH_SIZE,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {})
-    });
-
-    for (const lot of candidates) {
-      if (lotStatusKindFromSnapshot(lotStatusSnapshot(lot), now) !== status) continue;
-
-      matching.push(lot);
-      assertWithinExportLimit("lots", matching.length);
-    }
-
-    if (candidates.length < EXPORT_STATUS_SCAN_BATCH_SIZE) break;
-    cursor = candidates[candidates.length - 1].id;
-  }
-
-  return matching;
-}
-
 function shipmentReferenceIds(movements: MovementExportRecord[]) {
   return Array.from(new Set(movements.flatMap((movement) => {
     if (
@@ -200,18 +170,26 @@ export async function listLotExportRows(
   const { now = new Date(), ...filters } = options;
   const status = normalizedLotStatus(filters.status);
   const where = buildLotWhere(filters, now);
-  const lots = status && lotStatusRequiresCrossModelComparison(status)
-    ? await listStatusFilteredLotRecords(db, where, status, now)
-    : await db.reagentLot.findMany({
+  if (status && lotStatusRequiresCrossModelComparison(status)) {
+    const records = await listStatusFilteredLots(db, {
+      q: filters.q,
+      status,
+      now,
+      take: EXPORT_QUERY_TAKE
+    });
+    assertWithinExportLimit("lots", records.length);
+
+    return records.map((record) => statusFilteredRecordToExportRow(record, now));
+  }
+
+  const lots = await db.reagentLot.findMany({
         where,
         select: lotExportSelect,
         orderBy: lotExportOrder,
         take: EXPORT_QUERY_TAKE
       });
 
-  if (!status || !lotStatusRequiresCrossModelComparison(status)) {
-    assertWithinExportLimit("lots", lots.length);
-  }
+  assertWithinExportLimit("lots", lots.length);
 
   return lots.map((lot) => ({
     allergenCode: lot.allergen.code,
@@ -227,6 +205,30 @@ export async function listLotExportRows(
     isActive: lot.isActive,
     memo: lot.memo
   }));
+}
+
+function statusFilteredRecordToExportRow(
+  record: StatusFilteredLotRecord,
+  now: Date
+): LotExportRow {
+  return {
+    allergenCode: record.allergenCode,
+    allergenName: record.allergenName,
+    category: record.allergenCategory,
+    lotNo: record.lotNo,
+    receivedDate: record.receivedDate,
+    expirationDate: record.expirationDate,
+    initialQuantity: record.initialQuantity,
+    currentQuantity: record.currentQuantity,
+    minStock: record.minStock,
+    status: lotStatusFromSnapshot({
+      currentQuantity: record.currentQuantity,
+      expirationDate: record.expirationDate,
+      minStock: record.minStock
+    }, now),
+    isActive: record.isActive,
+    memo: record.memo
+  };
 }
 
 export async function listMovementExportRows(

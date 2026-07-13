@@ -209,28 +209,26 @@ export async function processShipment(
       }
     });
 
-    for (const allocation of allocations) {
-      await tx.shipmentItem.create({
-        data: {
-          shipmentId: shipment.id,
-          reagentLotId: allocation.lotId,
-          allergenId: allocation.allergenId,
-          quantity: allocation.quantity
-        }
-      });
+    await tx.shipmentItem.createMany({
+      data: allocations.map((allocation) => ({
+        shipmentId: shipment.id,
+        reagentLotId: allocation.lotId,
+        allergenId: allocation.allergenId,
+        quantity: allocation.quantity
+      }))
+    });
 
-      await tx.stockMovement.create({
-        data: {
-          reagentLotId: allocation.lotId,
-          type: "OUT",
-          quantity: allocation.quantity,
-          reason: order.orderNo,
-          refType: "SHIPMENT",
-          refId: shipment.id,
-          createdBy: actorId
-        }
-      });
-    }
+    await tx.stockMovement.createMany({
+      data: allocations.map((allocation) => ({
+        reagentLotId: allocation.lotId,
+        type: "OUT" as const,
+        quantity: allocation.quantity,
+        reason: order.orderNo,
+        refType: "SHIPMENT",
+        refId: shipment.id,
+        createdBy: actorId
+      }))
+    });
 
     await tx.auditLog.create({
       data: {
@@ -306,18 +304,19 @@ export async function reverseShipment(
         }
       });
 
-      await tx.stockMovement.create({
-        data: {
-          reagentLotId: item.reagentLotId,
-          type: "REVERSE",
-          quantity: item.quantity,
-          reason: `${shipment.order.orderNo} 출고 취소: ${reason}`,
-          refType: "SHIPMENT_CANCEL",
-          refId: shipment.id,
-          createdBy: actorId
-        }
-      });
     }
+
+    await tx.stockMovement.createMany({
+      data: shipment.items.map((item) => ({
+        reagentLotId: item.reagentLotId,
+        type: "REVERSE" as const,
+        quantity: item.quantity,
+        reason: `${shipment.order.orderNo} 출고 취소: ${reason}`,
+        refType: "SHIPMENT_CANCEL",
+        refId: shipment.id,
+        createdBy: actorId
+      }))
+    });
 
     const releasedOrder = await tx.order.updateMany({
       where: {

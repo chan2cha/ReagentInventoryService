@@ -4,6 +4,8 @@ import { SubmitButton } from "@/app/submit-button";
 import { FlashMessage } from "@/app/flash-message";
 import { getCurrentUser } from "@/lib/auth";
 import { getFlashMessage } from "@/lib/flash-message";
+import loginBackground from "@/lib/login_container_bg.jpg";
+import companyLogo from "@/lib/logo.png.png";
 import { login } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -20,12 +22,21 @@ export default async function LoginPage() {
 
   return (
     <main className="login-page">
+      <Image
+        alt=""
+        aria-hidden
+        className="login-background"
+        fill
+        priority
+        sizes="100vw"
+        src={loginBackground}
+      />
       <header className="login-brand-bar">
         <Image
-          alt="신영라파마"
+          alt="신영로파마"
           height={56}
           priority
-          src="/logo.png"
+          src={companyLogo}
           width={206}
         />
       </header>

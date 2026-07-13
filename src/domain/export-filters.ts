@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+/** 목록과 내보내기가 동일한 필터 기준을 쓰도록 Prisma 조건을 한곳에서 만든다. */
 import {
   isStockMovementKind,
   type StockMovementKind

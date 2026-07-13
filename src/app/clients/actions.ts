@@ -3,13 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { redirectWithFlash } from "@/lib/flash-message";
+import { formString } from "@/lib/form-data";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-function formString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
 
 async function fail(message: string): Promise<never> {
   return redirectWithFlash("/clients", "error", message);

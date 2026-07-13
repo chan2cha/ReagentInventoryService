@@ -1,7 +1,6 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
-import { useRef } from "react";
+import { DialogFrame } from "./dialog-frame";
 
 export function RegistrationDialog({
   title,
@@ -18,6 +17,14 @@ export function RegistrationDialog({
   showPlus?: boolean;
   triggerClassName?: string;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  return <><button className={triggerClassName} onClick={() => ref.current?.showModal()} type="button">{showPlus ? <Plus aria-hidden="true" size={17} /> : null}{triggerLabel}</button><dialog className={["registration-dialog", dialogClassName].filter(Boolean).join(" ")} onClick={(event) => { if (event.target === event.currentTarget) ref.current?.close(); }} ref={ref}><header><div><p className="eyebrow">ADMINISTRATION</p><h2>{title}</h2></div><button aria-label="닫기" className="dialog-close" onClick={() => ref.current?.close()} type="button"><X size={19} /></button></header>{children}</dialog></>;
+  return <DialogFrame
+    className={dialogClassName}
+    eyebrow="ADMINISTRATION"
+    showPlus={showPlus}
+    title={title}
+    triggerClassName={triggerClassName}
+    triggerLabel={triggerLabel}
+  >
+    {children}
+  </DialogFrame>;
 }

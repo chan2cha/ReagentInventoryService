@@ -1,6 +1,7 @@
 export type StockAdjustmentType = "ADJUST" | "DISPOSE";
 export type StockAdjustmentOperation = "ADD" | "REMOVE" | "DISPOSE";
 
+/** 화면의 조작 종류를 재고 원장에 저장할 부호 있는 수량으로 변환한다. */
 export function signedAdjustmentQuantity(operation: StockAdjustmentOperation, value: string) {
   const normalized = value.trim();
   const quantity = Number(normalized);

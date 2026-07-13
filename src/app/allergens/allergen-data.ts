@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { allergens } from "../reagent-data";
@@ -34,7 +35,8 @@ export async function getAllergenRows(page:number, q = ""): Promise<PaginatedRes
       { name: { contains: q, mode: "insensitive" as const } },
       { category: { contains: q, mode: "insensitive" as const } }
     ] } : {};
-    const total=await prisma.allergen.count({ where }); const meta=pageMeta(page,total); const dbAllergens = await prisma.allergen.findMany({
+    const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
+    const allergenQuery = {
       where,
       include: {
         _count: {
@@ -46,8 +48,16 @@ export async function getAllergenRows(page:number, q = ""): Promise<PaginatedRes
       orderBy: [
         { category: "asc" },
         { code: "asc" }
-      ],skip:meta.skip,take:PAGE_SIZE
-    });
+      ],skip:requestedSkip,take:PAGE_SIZE
+    } satisfies Prisma.AllergenFindManyArgs;
+    const [total, initialAllergens] = await Promise.all([
+      prisma.allergen.count({ where }),
+      prisma.allergen.findMany(allergenQuery)
+    ]);
+    const meta=pageMeta(page,total);
+    const dbAllergens = meta.skip === requestedSkip
+      ? initialAllergens
+      : await prisma.allergen.findMany({ ...allergenQuery, skip: meta.skip });
 
     return {...meta,rows:dbAllergens.map((allergen) => ({
       id: allergen.id,

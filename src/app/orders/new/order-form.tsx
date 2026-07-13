@@ -1,5 +1,7 @@
 "use client";
 
+/** 수동 항목과 템플릿 항목의 출처를 보존하며 주문 초안을 편집하는 폼이다. */
+
 import { Trash2 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { ProgressLink } from "@/app/progress-link";

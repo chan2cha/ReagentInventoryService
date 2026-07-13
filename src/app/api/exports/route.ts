@@ -1,4 +1,6 @@
 import { Buffer } from "node:buffer";
+
+/** 권한이 있는 사용자의 필터를 검증하고 Excel 파일 다운로드 응답으로 변환한다. */
 import { can } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
 import {

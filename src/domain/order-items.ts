@@ -3,6 +3,8 @@ export type RawOrderItemInput = {
   quantity: string;
 };
 
+/** 주문 입력을 DB 쓰기 전에 정규화하고 중복 품목을 하나의 수량으로 합친다. */
+
 export type NormalizedOrderItemInput = {
   allergenId: string;
   quantity: number;

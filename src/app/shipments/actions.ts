@@ -1,16 +1,14 @@
 "use server";
 
+/** 출고와 출고 취소는 서비스 계층에서 재고 원장까지 함께 처리하도록 위임한다. */
+
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { redirectWithFlash } from "@/lib/flash-message";
+import { formString } from "@/lib/form-data";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { processShipment, reverseShipment, type ShipmentAllocationInput } from "@/services/shipment-service";
-
-function formString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
 
 async function fail(message: string): Promise<never> {
   return redirectWithFlash("/shipments", "error", message);

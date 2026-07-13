@@ -1,17 +1,15 @@
 "use server";
 
+/** 새 주문 폼의 반복 입력을 정리한 뒤 주문 생성 트랜잭션을 호출한다. */
+
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { normalizeOrderItems } from "@/domain/order-items";
 import { requireRole } from "@/lib/auth";
 import { redirectWithFlash } from "@/lib/flash-message";
+import { formString, formStrings } from "@/lib/form-data";
 import { prisma } from "@/lib/prisma";
 import { createOrderValue } from "@/services/order-create-service";
-
-function formString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
 
 async function fail(message: string): Promise<never> {
   return redirectWithFlash("/orders/new", "error", message);
@@ -20,8 +18,8 @@ async function fail(message: string): Promise<never> {
 export async function createOrder(formData: FormData) {
   const clientId = formString(formData, "clientId");
   const memo = formString(formData, "memo");
-  const allergenIds = formData.getAll("allergenId").map((value) => typeof value === "string" ? value : "");
-  const quantities = formData.getAll("quantity").map((value) => typeof value === "string" ? value : "");
+  const allergenIds = formStrings(formData, "allergenId");
+  const quantities = formStrings(formData, "quantity");
 
   if (!clientId) {
     await fail("거래처를 선택하세요.");

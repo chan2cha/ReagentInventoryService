@@ -1,5 +1,7 @@
 export const STOCK_MOVEMENT_KINDS = ["IN", "OUT", "ADJUST", "DISPOSE", "REVERSE"] as const;
 
+/** DB enum을 화면과 엑셀에서 일관되게 표시하기 위한 표현 계층이다. */
+
 export type StockMovementKind = (typeof STOCK_MOVEMENT_KINDS)[number];
 
 export type StockMovementLabel = "입고" | "출고" | "조정" | "폐기" | "출고취소/복구";

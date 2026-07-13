@@ -1,15 +1,13 @@
 "use server";
 
+/** 입고 LOT 생성과 입고 원장 기록을 같은 트랜잭션으로 수행하는 서버 액션이다. */
+
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { redirectWithFlash } from "@/lib/flash-message";
+import { formString } from "@/lib/form-data";
 import { prisma } from "@/lib/prisma";
-
-function formString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
 
 function formDate(value: string) {
   return new Date(`${value}T00:00:00.000Z`);

@@ -3,13 +3,9 @@
 import { redirect } from "next/navigation";
 import { createSession } from "@/lib/auth";
 import { redirectWithFlash } from "@/lib/flash-message";
+import { formString } from "@/lib/form-data";
 import { verifyLoginPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
-
-function formString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
 
 async function fail(message: string): Promise<never> {
   return redirectWithFlash("/login", "error", message);

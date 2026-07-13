@@ -1,17 +1,15 @@
 "use server";
 
+/** LOT 재고 조정 입력을 권한 검증 후 재고 서비스로 전달하는 서버 액션이다. */
+
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { signedAdjustmentQuantity, type StockAdjustmentOperation } from "@/domain/stock-adjustment";
 import { redirectWithFlash } from "@/lib/flash-message";
+import { formString } from "@/lib/form-data";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { adjustLotStockValue } from "@/services/stock-service";
-
-function formString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
 
 async function fail(message: string): Promise<never> {
   return redirectWithFlash("/lots", "error", message);

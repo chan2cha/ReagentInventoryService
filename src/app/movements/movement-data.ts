@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { koreaDateKey } from "@/lib/date";
@@ -60,8 +61,8 @@ export async function getMovementRows(
 ): Promise<PaginatedResult<MovementRow>> {
   try {
     const where = buildMovementWhere({ q, type });
-    const total = await prisma.stockMovement.count({ where }); const meta = pageMeta(page, total);
-    const dbMovements = await prisma.stockMovement.findMany({
+    const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
+    const movementQuery = {
       where,
       select: {
         id: true,
@@ -84,8 +85,16 @@ export async function getMovementRows(
       orderBy: [
         { createdAt: "desc" },
         { id: "desc" }
-      ], skip: meta.skip, take: PAGE_SIZE
-    });
+      ], skip: requestedSkip, take: PAGE_SIZE
+    } satisfies Prisma.StockMovementFindManyArgs;
+    const [total, initialMovements] = await Promise.all([
+      prisma.stockMovement.count({ where }),
+      prisma.stockMovement.findMany(movementQuery)
+    ]);
+    const meta = pageMeta(page, total);
+    const dbMovements = meta.skip === requestedSkip
+      ? initialMovements
+      : await prisma.stockMovement.findMany({ ...movementQuery, skip: meta.skip });
 
     return { ...meta, rows: dbMovements.map((movement) => ({
       id: movement.id,

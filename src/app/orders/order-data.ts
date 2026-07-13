@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { koreaDateKey } from "@/lib/date";
@@ -67,7 +68,8 @@ export async function getOrderRows(page: number, q = ""): Promise<PaginatedResul
       { items: { some: { allergen: { is: { name: { contains: q, mode: "insensitive" as const } } } } } },
       { items: { some: { allergen: { is: { code: { contains: q, mode: "insensitive" as const } } } } } }
     ] } : {};
-    const total = await prisma.order.count({ where }); const meta = pageMeta(page, total); const dbOrders = await prisma.order.findMany({
+    const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
+    const orderQuery = {
       where,
       include: {
         client: true,
@@ -82,8 +84,16 @@ export async function getOrderRows(page: number, q = ""): Promise<PaginatedResul
       },
       orderBy: {
         createdAt: "desc"
-      }, skip: meta.skip, take: PAGE_SIZE
-    });
+      }, skip: requestedSkip, take: PAGE_SIZE
+    } satisfies Prisma.OrderFindManyArgs;
+    const [total, initialOrders] = await Promise.all([
+      prisma.order.count({ where }),
+      prisma.order.findMany(orderQuery)
+    ]);
+    const meta = pageMeta(page, total);
+    const dbOrders = meta.skip === requestedSkip
+      ? initialOrders
+      : await prisma.order.findMany({ ...orderQuery, skip: meta.skip });
 
     return { ...meta, rows: dbOrders.map((order) => ({
       id: order.id,

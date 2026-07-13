@@ -1,5 +1,7 @@
 "use client";
 
+/** 파일명 헤더를 안전하게 해석하고, 다운로드 중 중복 요청을 막는 클라이언트 버튼이다. */
+
 import { Download, LoaderCircle } from "lucide-react";
 import { useId, useState } from "react";
 

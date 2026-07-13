@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { clients } from "../reagent-data";
@@ -48,7 +49,8 @@ export async function getClientRows(page:number, q = ""): Promise<PaginatedResul
       { address: { contains: q, mode: "insensitive" as const } },
       { memo: { contains: q, mode: "insensitive" as const } }
     ] } : {};
-    const total=await prisma.client.count({ where }); const meta=pageMeta(page,total); const dbClients = await prisma.client.findMany({
+    const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
+    const clientQuery = {
       where,
       include: {
         _count: {
@@ -59,8 +61,16 @@ export async function getClientRows(page:number, q = ""): Promise<PaginatedResul
       },
       orderBy: {
         name: "asc"
-      },skip:meta.skip,take:PAGE_SIZE
-    });
+      },skip:requestedSkip,take:PAGE_SIZE
+    } satisfies Prisma.ClientFindManyArgs;
+    const [total, initialClients] = await Promise.all([
+      prisma.client.count({ where }),
+      prisma.client.findMany(clientQuery)
+    ]);
+    const meta=pageMeta(page,total);
+    const dbClients = meta.skip === requestedSkip
+      ? initialClients
+      : await prisma.client.findMany({ ...clientQuery, skip: meta.skip });
 
     return {...meta,rows:dbClients.map((client) => ({
       id: client.id,

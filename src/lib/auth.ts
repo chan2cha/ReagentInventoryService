@@ -1,8 +1,11 @@
 import "server-only";
 
+/** 세션 쿠키를 검증하고 페이지·서버 액션에서 사용할 현재 사용자를 제공한다. */
+
 import type { UserRole } from "@prisma/client";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { decodeSession, encodeSession } from "@/lib/session-token";
 import { isRoleAllowed } from "@/lib/access";
@@ -67,7 +70,8 @@ export async function clearSession() {
   cookieStore.delete(SESSION_COOKIE);
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+// 한 서버 렌더링 안에서 여러 권한 검사가 발생해도 사용자 조회는 한 번만 수행한다.
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const cookieStore = await cookies();
   const session = cookieStore.get(SESSION_COOKIE)?.value;
 
@@ -98,7 +102,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   });
 
   return user;
-}
+});
 
 export async function requireUser() {
   const user = await getCurrentUser();

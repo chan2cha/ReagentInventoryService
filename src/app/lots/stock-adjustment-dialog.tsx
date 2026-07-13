@@ -1,9 +1,10 @@
 "use client";
 
-import { Minus, PackageMinus, PackagePlus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { Minus, PackageMinus, PackagePlus } from "lucide-react";
+import { useState } from "react";
 import { adjustLotStock } from "./actions";
 import { SubmitButton } from "../submit-button";
+import { DialogFrame } from "../dialog-frame";
 
 type Operation = "ADD" | "REMOVE" | "DISPOSE";
 
@@ -32,7 +33,6 @@ export function StockAdjustmentDialog({
   expirationDate: string;
   disabled: boolean;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const [operation, setOperation] = useState<Operation>("REMOVE");
   const [quantity, setQuantity] = useState(1);
   const detail = operationDetails[operation];
@@ -42,13 +42,14 @@ export function StockAdjustmentDialog({
   const belowMinimum = !exceedsStock && minStock !== null && minStock > 0 && nextQuantity < minStock;
   const confirmMessage = `${allergenName} ${lotNo} 재고를 ${quantity}개 ${detail.button}하시겠습니까? 변경 후 수량은 ${nextQuantity}개입니다.`;
 
-  return <>
-    <button className="table-action" disabled={disabled} onClick={() => dialogRef.current?.showModal()} type="button">재고 조정</button>
-    <dialog className="registration-dialog stock-adjustment-dialog" onClick={(event) => { if (event.target === event.currentTarget) dialogRef.current?.close(); }} ref={dialogRef}>
-      <header>
-        <div><p className="eyebrow">STOCK ADJUSTMENT</p><h2>재고 조정</h2></div>
-        <button aria-label="닫기" className="dialog-close" onClick={() => dialogRef.current?.close()} type="button"><X size={19} /></button>
-      </header>
+  return <DialogFrame
+    className="stock-adjustment-dialog"
+    eyebrow="STOCK ADJUSTMENT"
+    title="재고 조정"
+    triggerClassName="table-action"
+    triggerDisabled={disabled}
+    triggerLabel="재고 조정"
+  >
       <form action={adjustLotStock} className="stock-adjustment-form">
         <input name="lotId" type="hidden" value={lotId} />
         <section className="stock-adjustment-summary">
@@ -77,8 +78,7 @@ export function StockAdjustmentDialog({
           {belowMinimum ? <p>변경 후 안전 수량 {minStock}개 미만이 됩니다.</p> : null}
         </section>
 
-        <div className="stock-adjustment-actions"><button className="secondary-button" onClick={() => dialogRef.current?.close()} type="button">취소</button><SubmitButton className={operation === "DISPOSE" ? "primary-button danger" : "primary-button"} confirmMessage={confirmMessage} disabled={exceedsStock || quantity < 1} pendingLabel="처리 중...">{quantity || 0}개 {detail.button}</SubmitButton></div>
+        <div className="stock-adjustment-actions"><button className="secondary-button" data-dialog-close type="button">취소</button><SubmitButton className={operation === "DISPOSE" ? "primary-button danger" : "primary-button"} confirmMessage={confirmMessage} disabled={exceedsStock || quantity < 1} pendingLabel="처리 중...">{quantity || 0}개 {detail.button}</SubmitButton></div>
       </form>
-    </dialog>
-  </>;
+  </DialogFrame>;
 }

@@ -107,15 +107,22 @@ describe("export data service", () => {
   });
 
   it("exports only rows that exactly match a computed inventory status", async () => {
-    const findMany = vi.fn().mockResolvedValue([
-      lotRecord(),
-      lotRecord({
-        id: "lot-2",
-        lotNo: "LOT-EGG-002",
-        currentQuantity: 8
-      })
-    ]);
-    const db = dbMock({ reagentLot: { findMany } });
+    const findMany = vi.fn();
+    const queryRaw = vi.fn().mockResolvedValue([{
+      id: "lot-1",
+      lotNo: "LOT-EGG-001",
+      receivedDate: new Date("2026-01-10T00:00:00.000Z"),
+      expirationDate: new Date("2026-08-20T00:00:00.000Z"),
+      initialQuantity: 10,
+      currentQuantity: 2,
+      memo: "?됱옣 蹂닿?",
+      isActive: true,
+      allergenCode: "EGG-01",
+      allergenName: "?쒕갚",
+      allergenCategory: "food",
+      minStock: 5
+    }]);
+    const db = dbMock({ $queryRaw: queryRaw, reagentLot: { findMany } });
 
     const rows = await listLotExportRows(db, {
       q: "EGG",
@@ -123,10 +130,8 @@ describe("export data service", () => {
       now: new Date("2026-07-13T03:00:00.000Z")
     });
 
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ AND: expect.any(Array) }),
-      take: 1_000
-    }));
+    expect(findMany).not.toHaveBeenCalled();
+    expect(queryRaw).toHaveBeenCalledTimes(1);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       lotNo: "LOT-EGG-001",
