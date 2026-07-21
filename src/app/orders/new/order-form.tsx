@@ -35,8 +35,8 @@ export function OrderForm({ clients, allergens }: OrderFormProps) {
   const clientOptions = useMemo<SearchableSelectOption[]>(() => clients.map((client) => ({
     id: client.id,
     label: client.name,
-    description: `담당 ${client.manager}${client.phone ? ` · ${client.phone}` : ""}`,
-    keywords: [client.name, client.manager, client.phone ?? ""]
+    description: [client.region, client.deliveryDepartment, `담당 ${client.manager}`].filter(Boolean).join(" · "),
+    keywords: [client.name, client.region ?? "", client.manager, client.deliveryDepartment ?? ""]
   })), [clients]);
   const allergenOptions = useMemo<SearchableSelectOption[]>(() => allergens.map((allergen) => ({
     id: allergen.id,
@@ -78,7 +78,7 @@ export function OrderForm({ clients, allergens }: OrderFormProps) {
         name="clientId"
         onChange={setClientId}
         options={clientOptions}
-        placeholder="거래처명, 담당자, 연락처 검색"
+        placeholder="거래처명, 지역, 담당자, 납품과 검색"
         required
         value={clientId}
       />

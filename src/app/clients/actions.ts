@@ -28,9 +28,9 @@ async function clientData(formData: FormData) {
 
   return {
     name,
+    region: formString(formData, "region") || null,
     managerName: formString(formData, "managerName") || null,
-    phone: formString(formData, "phone") || null,
-    address: formString(formData, "address") || null,
+    deliveryDepartment: formString(formData, "deliveryDepartment") || null,
     memo: formString(formData, "memo") || null
   };
 }

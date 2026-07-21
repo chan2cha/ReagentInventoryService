@@ -7,10 +7,9 @@ import { PAGE_SIZE,pageMeta,paginateRows,type PaginatedResult } from "@/lib/pagi
 export type ClientRow = {
   id: string;
   name: string;
-  manager: string;
-  phone: string;
   region: string;
-  address: string;
+  manager: string;
+  deliveryDepartment: string;
   memo: string;
   active: boolean;
   orderCount: number;
@@ -21,10 +20,9 @@ function sampleClientRows(): ClientRow[] {
   return clients.map((client) => ({
     id: String(client.id),
     name: client.name,
-    manager: client.manager,
-    phone: client.phone,
     region: client.region,
-    address: client.region,
+    manager: client.manager,
+    deliveryDepartment: client.deliveryDepartment,
     memo: "",
     active: true,
     orderCount: 0,
@@ -32,21 +30,13 @@ function sampleClientRows(): ClientRow[] {
   }));
 }
 
-function regionFromAddress(address: string | null) {
-  if (!address) {
-    return "-";
-  }
-
-  return address.split(" ").slice(0, 2).join(" ");
-}
-
 export async function getClientRows(page:number, q = ""): Promise<PaginatedResult<ClientRow>> {
   try {
     const where = q ? { OR: [
       { name: { contains: q, mode: "insensitive" as const } },
+      { region: { contains: q, mode: "insensitive" as const } },
       { managerName: { contains: q, mode: "insensitive" as const } },
-      { phone: { contains: q, mode: "insensitive" as const } },
-      { address: { contains: q, mode: "insensitive" as const } },
+      { deliveryDepartment: { contains: q, mode: "insensitive" as const } },
       { memo: { contains: q, mode: "insensitive" as const } }
     ] } : {};
     const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
@@ -75,10 +65,9 @@ export async function getClientRows(page:number, q = ""): Promise<PaginatedResul
     return {...meta,rows:dbClients.map((client) => ({
       id: client.id,
       name: client.name,
+      region: client.region ?? "-",
       manager: client.managerName ?? "-",
-      phone: client.phone ?? "-",
-      region: regionFromAddress(client.address),
-      address: client.address ?? "",
+      deliveryDepartment: client.deliveryDepartment ?? "-",
       memo: client.memo ?? "",
       active: client.isActive,
       orderCount: client._count.orders,

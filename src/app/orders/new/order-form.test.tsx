@@ -29,14 +29,15 @@ describe("OrderForm", () => {
         clients={[{
           id: "client-1",
           name: "서울병원",
+          region: "서울 강남구",
           manager: "김담당",
-          phone: "02-1234-5678"
+          deliveryDepartment: "진단검사의학과"
         }]}
       />
     );
 
     expect(markup).not.toContain("<select");
-    expect(markup).toContain("거래처명, 담당자, 연락처 검색");
+    expect(markup).toContain("거래처명, 지역, 담당자, 납품과 검색");
     expect(markup).toContain("시약 코드 또는 시약명 검색");
     expect(markup).toMatch(/type="hidden" name="clientId" value=""/);
     expect(markup).toMatch(/type="hidden" name="allergenId" value=""/);

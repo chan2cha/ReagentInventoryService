@@ -27,8 +27,8 @@ export type Client = {
   id: number;
   name: string;
   manager: string;
-  phone: string;
   region: string;
+  deliveryDepartment: string;
 };
 
 export type Order = {
@@ -83,11 +83,13 @@ export const lots: Lot[] = [
 ];
 
 export const clients: Client[] = [
-  { id: 1, name: "서울대학교병원", manager: "김정호", phone: "02-2072-2114", region: "서울 종로구" },
-  { id: 2, name: "삼성서울병원", manager: "이수진", phone: "02-3410-2114", region: "서울 강남구" },
-  { id: 3, name: "서울아산병원", manager: "박민재", phone: "02-3010-3114", region: "서울 송파구" },
-  { id: 4, name: "세브란스병원", manager: "최동훈", phone: "02-2228-1004", region: "서울 서대문구" },
-  { id: 5, name: "고려대학교의료원", manager: "정하늘", phone: "02-920-5114", region: "서울 성북구" }
+  { id: 1, name: "서울대학교병원", manager: "김정호", region: "서울 종로구", deliveryDepartment: "진단검사의학과" },
+  { id: 2, name: "삼성서울병원", manager: "이수진", region: "서울 강남구", deliveryDepartment: "알레르기내과" },
+  { id: 3, name: "서울아산병원", manager: "박민재", region: "서울 송파구", deliveryDepartment: "소아청소년과" },
+  { id: 4, name: "세브란스병원", manager: "최동훈", region: "서울 서대문구", deliveryDepartment: "호흡기내과" },
+  { id: 5, name: "고려대학교의료원", manager: "정하늘", region: "서울 성북구", deliveryDepartment: "진단검사의학과" },
+  { id: 6, name: "분당서울대학교병원", manager: "윤서연", region: "경기 성남시", deliveryDepartment: "알레르기내과" },
+  { id: 7, name: "인하대학교병원", manager: "한지민", region: "인천 미추홀구", deliveryDepartment: "소아청소년과" }
 ];
 
 export const orders: Order[] = [

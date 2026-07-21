@@ -925,9 +925,13 @@ a {
   min-width: 600px;
 }
 
-.allergen-edit-form,
-.client-edit-form {
+.allergen-edit-form {
   grid-template-columns: repeat(4, minmax(110px, 1fr));
+}
+
+.client-edit-form {
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  min-width: 760px;
 }
 
 .table-edit-form input {

@@ -81,11 +81,13 @@ const lotSeeds = [
 ];
 
 const clientSeeds = [
-  { name: "서울대학교병원", managerName: "김정호", phone: "02-2072-2114", address: "서울 종로구 대학로 101" },
-  { name: "삼성서울병원", managerName: "이수진", phone: "02-3410-2114", address: "서울 강남구 일원로 81" },
-  { name: "서울아산병원", managerName: "박민재", phone: "02-3010-3114", address: "서울 송파구 올림픽로43길 88" },
-  { name: "세브란스병원", managerName: "최동훈", phone: "02-2228-1004", address: "서울 서대문구 연세로 50-1" },
-  { name: "고려대학교의료원", managerName: "정하늘", phone: "02-920-5114", address: "서울 성북구 고려대로 73" }
+  { name: "서울대학교병원", region: "서울 종로구", managerName: "김정호", deliveryDepartment: "진단검사의학과", memo: "평일 오전 납품 요청" },
+  { name: "삼성서울병원", region: "서울 강남구", managerName: "이수진", deliveryDepartment: "알레르기내과", memo: "수령 전 담당자 연락" },
+  { name: "서울아산병원", region: "서울 송파구", managerName: "박민재", deliveryDepartment: "소아청소년과", memo: "월·수 정기 납품" },
+  { name: "세브란스병원", region: "서울 서대문구", managerName: "최동훈", deliveryDepartment: "호흡기내과", memo: "냉장 보관 확인 필요" },
+  { name: "고려대학교의료원", region: "서울 성북구", managerName: "정하늘", deliveryDepartment: "진단검사의학과", memo: "오후 3시 이전 납품" },
+  { name: "분당서울대학교병원", region: "경기 성남시", managerName: "윤서연", deliveryDepartment: "알레르기내과", memo: "신규 거래처 예시" },
+  { name: "인하대학교병원", region: "인천 미추홀구", managerName: "한지민", deliveryDepartment: "소아청소년과", memo: "수령 확인서 동봉" }
 ];
 
 const userSeed = {
@@ -400,9 +402,10 @@ async function main() {
           id: existing.id
         },
         data: {
+          region: seed.region,
           managerName: seed.managerName,
-          phone: seed.phone,
-          address: seed.address,
+          deliveryDepartment: seed.deliveryDepartment,
+          memo: seed.memo,
           isActive: true
         }
       });
@@ -411,9 +414,10 @@ async function main() {
       const client = await prisma.client.create({
         data: {
           name: seed.name,
+          region: seed.region,
           managerName: seed.managerName,
-          phone: seed.phone,
-          address: seed.address,
+          deliveryDepartment: seed.deliveryDepartment,
+          memo: seed.memo,
           isActive: true
         }
       });

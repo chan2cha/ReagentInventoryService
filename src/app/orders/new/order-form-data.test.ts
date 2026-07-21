@@ -22,7 +22,7 @@ describe("getOrderFormData", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.findClients.mockResolvedValue([
-      { id: "client-1", name: "거래처", managerName: "담당자", phone: "02-1234-5678" }
+      { id: "client-1", name: "거래처", region: "서울 강남구", managerName: "담당자", deliveryDepartment: "진단검사의학과" }
     ]);
     mocks.findAllergens.mockResolvedValue([
       { id: "allergen-1", code: "A-1", name: "시약", category: "검사" }
@@ -36,7 +36,7 @@ describe("getOrderFormData", () => {
 
   it("maps active clients and reagents into the order form DTO", async () => {
     await expect(getOrderFormData()).resolves.toEqual({
-      clients: [{ id: "client-1", name: "거래처", manager: "담당자", phone: "02-1234-5678" }],
+      clients: [{ id: "client-1", name: "거래처", region: "서울 강남구", manager: "담당자", deliveryDepartment: "진단검사의학과" }],
       allergens: [{ id: "allergen-1", code: "A-1", name: "시약" }]
     });
 

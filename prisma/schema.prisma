@@ -145,16 +145,16 @@ model WarehouseStock {
 }
 
 model Client {
-  id          String   @id @default(cuid())
-  name        String
-  managerName String?
-  phone       String?
-  address     String?
-  memo        String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  orders      Order[]
+  id                 String   @id @default(cuid())
+  name               String
+  region             String?
+  managerName        String?
+  deliveryDepartment String?
+  memo               String?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  orders             Order[]
 }
 
 model Order {

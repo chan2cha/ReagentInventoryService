@@ -4,8 +4,9 @@ import { prisma } from "@/lib/prisma";
 export type OrderFormClient = {
   id: string;
   name: string;
+  region: string | null;
   manager: string;
-  phone: string | null;
+  deliveryDepartment: string | null;
 };
 
 export type OrderFormAllergen = {
@@ -43,8 +44,9 @@ export async function getOrderFormData(): Promise<{
       clients: clients.map((client) => ({
         id: client.id,
         name: client.name,
+        region: client.region,
         manager: client.managerName ?? "-",
-        phone: client.phone
+        deliveryDepartment: client.deliveryDepartment
       })),
       allergens: allergens.map((allergen) => ({
         id: allergen.id,
