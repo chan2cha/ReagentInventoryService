@@ -64,6 +64,31 @@ describe("createOrderValue", () => {
     expect(tx.auditLog.create).toHaveBeenCalledOnce();
   });
 
+  it("stores an optional order image in the same order transaction", async () => {
+    const tx = transactionClient();
+    const image = {
+      fileName: "order.png",
+      contentType: "image/png" as const,
+      byteSize: 8,
+      data: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    };
+
+    await createOrderValue(transactionDatabase(tx), { ...input, image });
+
+    expect(tx.order.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        image: {
+          create: image
+        }
+      })
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        description: expect.stringContaining("이미지 첨부")
+      })
+    });
+  });
+
   it("rejects an inactive or missing client before creating an order", async () => {
     const tx = transactionClient();
     tx.client.findFirst.mockResolvedValue(null);

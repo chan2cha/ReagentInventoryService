@@ -1,6 +1,8 @@
+import type { WarehouseKind } from "@/domain/warehouse";
+
 export type LotStatus = "정상" | "재고부족" | "품절" | "유통기한 임박" | "유통기한 만료";
 export type OrderStatus = "접수" | "준비중" | "출고완료" | "취소";
-export type MovementType = "입고" | "출고" | "조정" | "폐기";
+export type MovementType = "입고" | "출고" | "조정" | "폐기" | "창고이동";
 
 export type Allergen = {
   id: number;
@@ -16,6 +18,7 @@ export type Lot = {
   allergenId: number;
   lotNo: string;
   quantity: number;
+  warehouse: WarehouseKind;
   receivedDate: string;
   expirationDate: string;
 };
@@ -46,6 +49,8 @@ export type Movement = {
   lotNo: string;
   quantity: number;
   memo: string;
+  warehouse?: WarehouseKind;
+  destinationWarehouse?: WarehouseKind;
 };
 
 export const today = koreaDateKey();
@@ -64,17 +69,17 @@ export const allergens: Allergen[] = [
 ];
 
 export const lots: Lot[] = [
-  { id: 1, allergenId: 1, lotNo: "LOT-2501-HDM1-A", quantity: 18, receivedDate: "2025-01-15", expirationDate: "2027-03-15" },
-  { id: 2, allergenId: 1, lotNo: "LOT-2501-HDM1-B", quantity: 4, receivedDate: "2025-01-20", expirationDate: "2026-07-25" },
-  { id: 3, allergenId: 2, lotNo: "LOT-2502-HDM2-A", quantity: 0, receivedDate: "2025-02-10", expirationDate: "2026-12-10" },
-  { id: 4, allergenId: 3, lotNo: "LOT-2503-DOG-A", quantity: 22, receivedDate: "2025-03-05", expirationDate: "2027-06-20" },
-  { id: 5, allergenId: 4, lotNo: "LOT-2503-CAT-A", quantity: 3, receivedDate: "2025-03-10", expirationDate: "2026-07-18" },
-  { id: 6, allergenId: 5, lotNo: "LOT-2504-GRS-A", quantity: 0, receivedDate: "2025-04-15", expirationDate: "2026-06-15" },
-  { id: 7, allergenId: 6, lotNo: "LOT-2505-MLK-A", quantity: 28, receivedDate: "2025-05-20", expirationDate: "2027-09-01" },
-  { id: 8, allergenId: 7, lotNo: "LOT-2508-EGG-B", quantity: 6, receivedDate: "2026-07-03", expirationDate: "2026-09-15" },
-  { id: 9, allergenId: 8, lotNo: "LOT-2506-PNT-A", quantity: 2, receivedDate: "2025-06-10", expirationDate: "2026-08-05" },
-  { id: 10, allergenId: 9, lotNo: "LOT-2506-SHR-A", quantity: 14, receivedDate: "2025-06-29", expirationDate: "2027-05-22" },
-  { id: 11, allergenId: 10, lotNo: "LOT-2507-WHT-A", quantity: 5, receivedDate: "2025-07-15", expirationDate: "2026-07-30" }
+  { id: 1, allergenId: 1, lotNo: "LOT-2501-HDM1-A", quantity: 18, warehouse: "FINISHED_GOODS", receivedDate: "2025-01-15", expirationDate: "2027-03-15" },
+  { id: 2, allergenId: 1, lotNo: "LOT-2501-HDM1-B", quantity: 4, warehouse: "FINISHED_GOODS", receivedDate: "2025-01-20", expirationDate: "2026-07-25" },
+  { id: 3, allergenId: 2, lotNo: "LOT-2502-HDM2-A", quantity: 0, warehouse: "FINISHED_GOODS", receivedDate: "2025-02-10", expirationDate: "2026-12-10" },
+  { id: 4, allergenId: 3, lotNo: "LOT-2503-DOG-A", quantity: 22, warehouse: "FINISHED_GOODS", receivedDate: "2025-03-05", expirationDate: "2027-06-20" },
+  { id: 5, allergenId: 4, lotNo: "LOT-2503-CAT-A", quantity: 3, warehouse: "FINISHED_GOODS", receivedDate: "2025-03-10", expirationDate: "2026-07-18" },
+  { id: 6, allergenId: 5, lotNo: "LOT-2504-GRS-A", quantity: 0, warehouse: "FINISHED_GOODS", receivedDate: "2025-04-15", expirationDate: "2026-06-15" },
+  { id: 7, allergenId: 6, lotNo: "LOT-2505-MLK-A", quantity: 28, warehouse: "FINISHED_GOODS", receivedDate: "2025-05-20", expirationDate: "2027-09-01" },
+  { id: 8, allergenId: 7, lotNo: "LOT-2508-EGG-B", quantity: 6, warehouse: "FINISHED_GOODS", receivedDate: "2026-07-03", expirationDate: "2026-09-15" },
+  { id: 9, allergenId: 8, lotNo: "LOT-2506-PNT-A", quantity: 2, warehouse: "FINISHED_GOODS", receivedDate: "2025-06-10", expirationDate: "2026-08-05" },
+  { id: 10, allergenId: 9, lotNo: "LOT-2506-SHR-A", quantity: 14, warehouse: "FINISHED_GOODS", receivedDate: "2025-06-29", expirationDate: "2027-05-22" },
+  { id: 11, allergenId: 10, lotNo: "LOT-2507-WHT-A", quantity: 5, warehouse: "FINISHED_GOODS", receivedDate: "2025-07-15", expirationDate: "2026-07-30" }
 ];
 
 export const clients: Client[] = [

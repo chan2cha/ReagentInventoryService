@@ -35,6 +35,7 @@ describe("buildExportWorkbook", () => {
         reagentName: "우유 단백질",
         category: "식품",
         lotNo: "LOT-001",
+        warehouse: "완제품",
         receivedDate: "2026-07-01",
         expirationDate: "2027-07-01",
         initialQuantity: 12,
@@ -50,6 +51,8 @@ describe("buildExportWorkbook", () => {
         reagentCode: "MILK-01",
         reagentName: "우유 단백질",
         lotNo: "LOT-001",
+        warehouse: "완제품",
+        destinationWarehouse: "검체",
         expirationDate: "2027-07-01",
         recordedQuantity: 5,
         stockDelta: -5,
@@ -91,33 +94,37 @@ describe("buildExportWorkbook", () => {
       "시약명",
       "분류",
       "제조번호",
+      "창고",
       "입고일",
       "유통기한",
-      "초기 수량",
+      "LOT 최초 수량",
       "현재 수량",
       "안전 수량",
       "상태",
       "활성 여부",
       "메모"
     ]);
-    expect(inventory.getCell("E2").type).toBe(ExcelJS.ValueType.Date);
+    expect(inventory.getCell("E2").value).toBe("완제품");
     expect(inventory.getCell("F2").type).toBe(ExcelJS.ValueType.Date);
-    expect(inventory.getCell("G2").type).toBe(ExcelJS.ValueType.Number);
-    expect(inventory.getCell("G2").value).toBe(12);
-    expect(inventory.getCell("H2").value).toBe(7);
-    expect(inventory.getCell("K2").value).toBe("활성");
-    expect(inventory.getCell("L2").type).toBe(ExcelJS.ValueType.String);
-    expect(inventory.getCell("L2").value).toBe("=SUM(1,1)");
-    expectFrozenHeaderAndFilter(inventory, 12);
+    expect(inventory.getCell("G2").type).toBe(ExcelJS.ValueType.Date);
+    expect(inventory.getCell("H2").type).toBe(ExcelJS.ValueType.Number);
+    expect(inventory.getCell("H2").value).toBe(12);
+    expect(inventory.getCell("I2").value).toBe(7);
+    expect(inventory.getCell("L2").value).toBe("활성");
+    expect(inventory.getCell("M2").type).toBe(ExcelJS.ValueType.String);
+    expect(inventory.getCell("M2").value).toBe("=SUM(1,1)");
+    expectFrozenHeaderAndFilter(inventory, 13);
 
     const movements = workbook.getWorksheet("입출고이력")!;
     expect(rowValues(movements, 1)).toEqual([
       undefined,
-      "처리일시 (KST)",
+      "처리일",
       "구분",
       "시약 코드",
       "시약명",
       "제조번호",
+      "처리/출발 창고",
+      "도착 창고",
       "유통기한",
       "기록 수량",
       "재고 증감",
@@ -128,18 +135,20 @@ describe("buildExportWorkbook", () => {
       "처리자"
     ]);
     expect(movements.getCell("A2").type).toBe(ExcelJS.ValueType.Date);
-    expect((movements.getCell("A2").value as Date).toISOString()).toBe("2026-07-13T00:30:45.000Z");
-    expect(movements.getCell("A2").numFmt).toBe("yyyy-mm-dd hh:mm:ss");
-    expect(movements.getCell("F2").type).toBe(ExcelJS.ValueType.Date);
-    expect(movements.getCell("G2").type).toBe(ExcelJS.ValueType.Number);
-    expect(movements.getCell("G2").value).toBe(5);
-    expect(movements.getCell("H2").type).toBe(ExcelJS.ValueType.Number);
-    expect(movements.getCell("H2").value).toBe(-5);
-    expect(movements.getCell("I2").type).toBe(ExcelJS.ValueType.String);
-    expect(movements.getCell("I2").value).toBe("@외부참조");
-    expect(movements.getCell("K2").value).toBe("ORD-001");
-    expect(movements.getCell("L2").value).toBe("테스트병원");
-    expectFrozenHeaderAndFilter(movements, 13);
+    expect((movements.getCell("A2").value as Date).toISOString()).toBe("2026-07-13T00:00:00.000Z");
+    expect(movements.getCell("A2").numFmt).toBe("yyyy-mm-dd");
+    expect(movements.getCell("F2").value).toBe("완제품");
+    expect(movements.getCell("G2").value).toBe("검체");
+    expect(movements.getCell("H2").type).toBe(ExcelJS.ValueType.Date);
+    expect(movements.getCell("I2").type).toBe(ExcelJS.ValueType.Number);
+    expect(movements.getCell("I2").value).toBe(5);
+    expect(movements.getCell("J2").type).toBe(ExcelJS.ValueType.Number);
+    expect(movements.getCell("J2").value).toBe(-5);
+    expect(movements.getCell("K2").type).toBe(ExcelJS.ValueType.String);
+    expect(movements.getCell("K2").value).toBe("@외부참조");
+    expect(movements.getCell("M2").value).toBe("ORD-001");
+    expect(movements.getCell("N2").value).toBe("테스트병원");
+    expectFrozenHeaderAndFilter(movements, 15);
 
     for (const worksheet of workbook.worksheets) {
       worksheet.eachRow((row) => {
@@ -175,7 +184,7 @@ describe("buildExportWorkbook", () => {
     const inventory = workbook.getWorksheet("재고현황")!;
     expect(inventory.rowCount).toBe(1);
     expect(inventory.getCell("A2").value).toBeNull();
-    expectFrozenHeaderAndFilter(inventory, 12);
+    expectFrozenHeaderAndFilter(inventory, 13);
   });
 
   it("creates an information plus movements workbook when movements are exported alone", async () => {
@@ -190,5 +199,74 @@ describe("buildExportWorkbook", () => {
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["내보내기정보", "입출고이력"]);
     expect(workbook.getWorksheet("입출고이력")!.rowCount).toBe(1);
     expect(workbook.getWorksheet("내보내기정보")!.getCell("B5").value).toBe(0);
+  });
+
+  it("creates a typed order-item sheet and keeps user text out of formulas", async () => {
+    const workbook = await loadWorkbook(await buildExportWorkbook({
+      metadata: {
+        generatedBy: "주문 담당자",
+        generatedAt: "2026-07-21T02:00:00.000Z",
+        filters: [{ label: "주문일", value: "2026-07-21 ~ 2026-07-21" }]
+      },
+      orders: [{
+        orderedAt: "2026-07-20T15:30:45.000Z",
+        orderNo: "ORD-20260721-001",
+        status: "취소",
+        clientName: "+서울병원",
+        clientManager: "김담당",
+        reagentCode: "EGG-01",
+        reagentName: "난백",
+        quantity: 3,
+        memo: "=HYPERLINK(\"https://example.invalid\")",
+        hasImage: true,
+        creatorName: "주문 담당자"
+      }, {
+        orderedAt: "2026-07-20T15:30:45.000Z",
+        orderNo: "ORD-20260721-001",
+        status: "취소",
+        clientName: "+서울병원",
+        reagentCode: "MILK-01",
+        reagentName: "우유",
+        quantity: 1
+      }]
+    }));
+
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "내보내기정보",
+      "주문내역"
+    ]);
+    const information = workbook.getWorksheet("내보내기정보")!;
+    expect(information.getCell("A5").value).toBe("주문 건수");
+    expect(information.getCell("B5").value).toBe(1);
+    expect(information.getCell("A6").value).toBe("주문 품목 건수");
+    expect(information.getCell("B6").value).toBe(2);
+
+    const orders = workbook.getWorksheet("주문내역")!;
+    expect(rowValues(orders, 1)).toEqual([
+      undefined,
+      "주문일",
+      "주문번호",
+      "상태",
+      "거래처",
+      "담당자",
+      "시약 코드",
+      "시약명",
+      "주문 수량",
+      "메모",
+      "이미지 첨부",
+      "등록자"
+    ]);
+    expect(orders.getCell("A2").type).toBe(ExcelJS.ValueType.Date);
+    expect((orders.getCell("A2").value as Date).toISOString()).toBe("2026-07-21T00:00:00.000Z");
+    expect(orders.getCell("A2").numFmt).toBe("yyyy-mm-dd");
+    expect(orders.getCell("H2").type).toBe(ExcelJS.ValueType.Number);
+    expect(orders.getCell("H2").value).toBe(3);
+    expect(orders.getCell("I2").type).toBe(ExcelJS.ValueType.String);
+    expect(orders.getCell("I2").value).toBe("=HYPERLINK(\"https://example.invalid\")");
+    expect(orders.getCell("J2").value).toBe("있음");
+    expectFrozenHeaderAndFilter(orders, 11);
+    orders.eachRow((row) => row.eachCell((cell) => {
+      expect(cell.type).not.toBe(ExcelJS.ValueType.Formula);
+    }));
   });
 });

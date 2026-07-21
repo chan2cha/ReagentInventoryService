@@ -2,7 +2,7 @@
 
 ## 1. 설계 원칙
 
-재고는 항원 단위가 아니라 LOT 단위로 관리한다.
+재고는 항원 단위가 아니라 LOT와 창고의 조합으로 관리한다. `ReagentLot`은 제조번호·유통기한 등 LOT 정체성을 보관하고, 변경 가능한 현재 수량의 단일 원천은 `WarehouseStock.quantity`이다.
 
 LOT는 다음 값의 조합으로 식별한다.
 
@@ -50,13 +50,24 @@ LOT는 다음 값의 조합으로 식별한다.
 | expirationDate | 유통기한 |
 | receivedDate | 입고일 |
 | initialQuantity | 최초 입고수량 |
-| currentQuantity | 현재고 |
 | memo | 메모 |
 | isActive | 사용 여부 |
 | createdAt | 생성일시 |
 | updatedAt | 수정일시 |
 
-### 2.4 거래처 Client
+### 2.4 창고재고 WarehouseStock
+
+| 필드 | 설명 |
+|---|---|
+| reagentLotId | LOT ID, 복합 기본키 |
+| warehouse | 창고, 복합 기본키 |
+| quantity | 해당 LOT·창고의 현재 수량 |
+| createdAt | 생성일시 |
+| updatedAt | 수정일시 |
+
+동일 LOT은 여러 창고에 나뉘어 보관할 수 있지만 `(reagentLotId, warehouse)` 행은 하나만 존재한다. 수량이 0이 된 행도 이력과 조회의 일관성을 위해 유지할 수 있다.
+
+### 2.5 거래처 Client
 
 | 필드 | 설명 |
 |---|---|
@@ -70,7 +81,7 @@ LOT는 다음 값의 조합으로 식별한다.
 | createdAt | 생성일시 |
 | updatedAt | 수정일시 |
 
-### 2.5 주문 Order
+### 2.6 주문 Order
 
 | 필드 | 설명 |
 |---|---|
@@ -83,7 +94,19 @@ LOT는 다음 값의 조합으로 식별한다.
 | createdAt | 생성일시 |
 | updatedAt | 수정일시 |
 
-### 2.6 주문상세 OrderItem
+### 2.6.1 주문 이미지 OrderImage
+
+| 필드 | 설명 |
+|---|---|
+| id | 주문 이미지 ID |
+| orderId | 주문 ID, 주문당 1개로 제한 |
+| fileName | 정규화된 표시용 원본 파일명 |
+| contentType | 검증된 MIME 유형(JPEG/PNG/WebP) |
+| byteSize | 이미지 바이트 크기, 최대 3MB |
+| data | 인증 경로에서만 제공하는 이미지 원본 바이트 |
+| createdAt | 생성일시 |
+
+### 2.7 주문상세 OrderItem
 
 | 필드 | 설명 |
 |---|---|
@@ -92,35 +115,7 @@ LOT는 다음 값의 조합으로 식별한다.
 | allergenId | 항원 ID |
 | quantity | 주문수량 |
 
-### 2.7 주문 세트 OrderTemplate
-
-거래처와 매핑하지 않는 전사 공용 주문 품목 템플릿이다.
-
-| 필드 | 설명 |
-|---|---|
-| id | 주문 세트 ID |
-| name | 화면에 표시할 세트명 |
-| nameKey | NFKC 정규화 및 소문자 변환한 중복 검사용 세트명 |
-| description | 설명 |
-| isActive | 주문 등록 사용 여부 |
-| sortOrder | 표시 순서 |
-| version | 동시 수정 감지를 위한 버전 |
-| createdBy | 등록자 ID |
-| updatedBy | 최종 수정자 ID |
-| createdAt | 생성일시 |
-| updatedAt | 수정일시 |
-
-### 2.8 주문 세트 품목 OrderTemplateItem
-
-| 필드 | 설명 |
-|---|---|
-| id | 주문 세트 품목 ID |
-| templateId | 주문 세트 ID |
-| allergenId | 시약 ID |
-| quantity | 주문 초안에 적용할 기본 수량 |
-| position | 세트 내 표시 순서 |
-
-### 2.9 출고 Shipment
+### 2.8 출고 Shipment
 
 | 필드 | 설명 |
 |---|---|
@@ -131,7 +126,7 @@ LOT는 다음 값의 조합으로 식별한다.
 | shippedAt | 출고일시 |
 | memo | 메모 |
 
-### 2.10 출고상세 ShipmentItem
+### 2.9 출고상세 ShipmentItem
 
 | 필드 | 설명 |
 |---|---|
@@ -141,7 +136,7 @@ LOT는 다음 값의 조합으로 식별한다.
 | allergenId | 항원 ID |
 | quantity | 출고수량 |
 
-### 2.11 재고이동 StockMovement
+### 2.10 재고이동 StockMovement
 
 | 필드 | 설명 |
 |---|---|
@@ -149,13 +144,15 @@ LOT는 다음 값의 조합으로 식별한다.
 | reagentLotId | LOT ID |
 | type | 이동 유형 |
 | quantity | 변경수량 |
+| warehouse | 발생 창고. `TRANSFER`에서는 출발 창고 |
+| destinationWarehouse | `TRANSFER`의 도착 창고, 그 외에는 null |
 | reason | 사유 |
 | refType | 참조 유형 |
 | refId | 참조 ID |
 | createdBy | 처리자 ID |
 | createdAt | 처리일시 |
 
-### 2.12 감사 로그 AuditLog
+### 2.11 감사 로그 AuditLog
 
 | 필드 | 설명 |
 |---|---|
@@ -203,6 +200,17 @@ LOT는 다음 값의 조합으로 식별한다.
 | ADJUST | 조정 |
 | DISPOSE | 폐기 |
 | REVERSE | 취소/복구 |
+| TRANSFER | 창고 간 이동. 전체 수량 증감은 0 |
+
+### 창고
+
+| 값 | 설명 |
+|---|---|
+| FINISHED_GOODS | 완제품 |
+| SAMPLE | 검체 |
+| RETURNED | 반품 |
+| NONCONFORMING | 부적합 |
+| DISPOSAL | 폐기 |
 
 ## 4. 주요 제약조건
 
@@ -211,15 +219,13 @@ LOT는 다음 값의 조합으로 식별한다.
 | Allergen.code unique | 항원 코드는 중복 불가 |
 | User.loginId unique | 사용자 로그인 아이디 중복 불가 |
 | Order.orderNo unique | 주문번호 중복 불가 |
+| OrderImage.orderId unique | 주문당 첨부 이미지 1개 |
+| OrderImage 검증 제약 | JPEG/PNG/WebP, 1~3MB, 메타 크기와 실제 바이트 크기 일치 |
 | ReagentLot unique | allergenId + lotNo + expirationDate 중복 불가 |
-| currentQuantity >= 0 | 재고 음수 불가 |
-| OrderTemplate.nameKey unique | 정규화된 주문 세트명 중복 불가 |
-| OrderTemplateItem unique | templateId + allergenId 및 templateId + position 중복 불가 |
-| OrderTemplateItem.quantity > 0 | 세트 기본 수량은 양의 정수 |
-| OrderTemplate.version > 0 | 동시 수정 버전은 양의 정수 |
-| OrderTemplate.sortOrder >= 0 | 표시 순서는 음수가 될 수 없음 |
-
-주문 세트에는 `Client` 외래 키가 없으며 모든 거래처 주문에서 공용으로 사용한다. 애플리케이션은 세트당 한 개 이상 100개 이하의 서로 다른 품목을 허용하며, 주문 세트 등록, 수정, 재활성화 시 모든 구성 시약이 활성 상태인지 검사한다. 주문 세트를 삭제하면 구성 품목은 함께 삭제되지만, 참조 시약 삭제는 제한한다. 현재 운영 화면은 이력 보존을 위해 주문 세트를 물리 삭제하지 않고 비활성화한다.
+| WarehouseStock primary key | reagentLotId + warehouse 중복 불가 |
+| WarehouseStock.quantity >= 0 | 창고별 재고 음수 불가 |
+| TRANSFER shape | 양의 수량, 서로 다른 출발·도착 창고 필수 |
+| non-TRANSFER destination | `TRANSFER` 외 이력의 destinationWarehouse는 null |
 
 ## 5. 주요 인덱스
 
@@ -228,14 +234,13 @@ LOT는 다음 값의 조합으로 식별한다.
 | Allergen | name | 항원명 검색 |
 | ReagentLot | lotNo | 제조번호 검색 |
 | ReagentLot | expirationDate | 유통기한 임박 조회 |
-| ReagentLot | currentQuantity | 재고 부족 조회 |
+| WarehouseStock | warehouse + quantity | 창고별 가용·부족 재고 조회 |
 | Order | status | 출고대기 주문 조회 |
 | Order | createdAt | 기간별 주문 조회 |
-| OrderTemplate | isActive + sortOrder + name | 활성 세트 정렬 및 조회 |
-| OrderTemplate | createdBy, updatedBy | 등록자/수정자 관계 조회 |
-| OrderTemplateItem | allergenId | 시약 기준 관계 조회 |
 | AuditLog | createdAt | 최근 감사 이력 조회 |
 | AuditLog | entityType + entityId | 대상 업무 데이터 이력 조회 |
 | AuditLog | actorId | 처리자별 이력 조회 |
 | Shipment | shippedAt | 기간별 출고 조회 |
 | StockMovement | createdAt | 최근 이력 조회 |
+| StockMovement | warehouse + createdAt | 출발·발생 창고별 이력 조회 |
+| StockMovement | destinationWarehouse + createdAt | 도착 창고별 이동 조회 |

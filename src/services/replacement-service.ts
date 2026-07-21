@@ -76,25 +76,43 @@ export async function completeReplacement(db: PrismaClient, input: {
     const tomorrow = addDateOnlyDays(todayKey, 1);
     const policy = await tx.replacementPolicy.findUniqueOrThrow({ where: { id: REPLACEMENT_POLICY_ID } });
     const minimumExpiration = addDateOnlyDays(todayKey, policy.minimumDeliveryShelfDays);
-    const lots = await tx.reagentLot.findMany({ where: {
-      allergenId: replacement.originalShipmentItem.allergenId,
-      currentQuantity: { gt: 0 }, isActive: true,
-      receivedDate: { lt: tomorrow }, expirationDate: { gte: minimumExpiration }
-    }, orderBy: [{ expirationDate: "asc" }, { lotNo: "asc" }] });
+    const stocks = await tx.warehouseStock.findMany({
+      where: {
+        warehouse: "FINISHED_GOODS",
+        quantity: { gt: 0 },
+        reagentLot: { is: {
+          allergenId: replacement.originalShipmentItem.allergenId,
+          isActive: true,
+          receivedDate: { lt: tomorrow },
+          expirationDate: { gte: minimumExpiration }
+        } }
+      },
+      include: { reagentLot: true },
+      orderBy: [
+        { reagentLot: { expirationDate: "asc" } },
+        { reagentLot: { lotNo: "asc" } }
+      ]
+    });
     let remaining = replacement.confirmedQuantity;
     const allocations: Array<{ id: string; quantity: number }> = [];
-    for (const lot of lots) {
+    for (const stock of stocks) {
       if (remaining === 0) break;
-      const quantity = Math.min(remaining, lot.currentQuantity);
-      allocations.push({ id: lot.id, quantity });
+      const quantity = Math.min(remaining, stock.quantity);
+      allocations.push({ id: stock.reagentLotId, quantity });
       remaining -= quantity;
     }
     if (remaining > 0) throw new Error("REPLACEMENT_STOCK_INSUFFICIENT");
     for (const allocation of allocations) {
-      const changed = await tx.reagentLot.updateMany({ where: {
-        id: allocation.id, currentQuantity: { gte: allocation.quantity }, isActive: true,
-        receivedDate: { lt: tomorrow }, expirationDate: { gte: minimumExpiration }
-      }, data: { currentQuantity: { decrement: allocation.quantity } } });
+      const changed = await tx.warehouseStock.updateMany({ where: {
+        reagentLotId: allocation.id,
+        warehouse: "FINISHED_GOODS",
+        quantity: { gte: allocation.quantity },
+        reagentLot: { is: {
+          isActive: true,
+          receivedDate: { lt: tomorrow },
+          expirationDate: { gte: minimumExpiration }
+        } }
+      }, data: { quantity: { decrement: allocation.quantity } } });
       if (changed.count !== 1) throw new RetryableTransactionError();
     }
     const shipment = await tx.shipment.create({ data: {
@@ -115,6 +133,7 @@ export async function completeReplacement(db: PrismaClient, input: {
         reagentLotId: allocation.id,
         type: "OUT" as const,
         quantity: allocation.quantity,
+        warehouse: "FINISHED_GOODS" as const,
         reason: `${replacement.replacementNo} 선제 교환`,
         refType: "REPLACEMENT",
         refId: replacement.id,

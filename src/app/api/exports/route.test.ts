@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => {
     readonly code = "EXPORT_ROW_LIMIT_EXCEEDED";
 
     constructor(
-      readonly dataset: "lots" | "movements",
+      readonly dataset: "lots" | "movements" | "orders",
       readonly limit = 10_000
     ) {
       super(`EXPORT_ROW_LIMIT_EXCEEDED:${dataset}:${limit}`);
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     getCurrentUser: vi.fn(),
     listLotExportRows: vi.fn(),
     listMovementExportRows: vi.fn(),
+    listOrderExportRows: vi.fn(),
     buildExportWorkbook: vi.fn(),
     auditCreate: vi.fn(),
     transaction: vi.fn()
@@ -38,7 +39,8 @@ vi.mock("@/services/export-data-service", () => ({
   EXPORT_ROW_LIMIT: 10_000,
   ExportRowLimitExceededError: mocks.MockExportRowLimitExceededError,
   listLotExportRows: mocks.listLotExportRows,
-  listMovementExportRows: mocks.listMovementExportRows
+  listMovementExportRows: mocks.listMovementExportRows,
+  listOrderExportRows: mocks.listOrderExportRows
 }));
 
 import { GET } from "./route";
@@ -57,6 +59,7 @@ const lotRow = {
   allergenName: "집먼지진드기",
   category: "흡입성",
   lotNo: "LOT-001",
+  warehouse: "FINISHED_GOODS" as const,
   receivedDate: new Date("2026-07-01T00:00:00.000Z"),
   expirationDate: new Date("2027-07-01T00:00:00.000Z"),
   initialQuantity: 10,
@@ -76,12 +79,29 @@ const movementRow = {
   allergenCode: "R-001",
   allergenName: "집먼지진드기",
   lotNo: "LOT-001",
+  warehouse: "FINISHED_GOODS" as const,
+  destinationWarehouse: null,
   expirationDate: new Date("2027-07-01T00:00:00.000Z"),
   reason: "ORD-001",
   refType: "SHIPMENT",
   orderNo: "ORD-001",
   clientName: "테스트병원",
   actorName: "출고담당"
+};
+
+const orderRow = {
+  orderId: "order-1",
+  createdAt: new Date("2026-07-21T01:30:00.000Z"),
+  orderNo: "ORD-20260721-001",
+  status: "접수" as const,
+  clientName: "테스트병원",
+  clientManager: "김담당",
+  allergenCode: "R-001",
+  allergenName: "집먼지진드기",
+  quantity: 3,
+  memo: "정기 주문",
+  hasImage: true,
+  creatorName: "주문담당"
 };
 
 function request(query: string) {
@@ -98,6 +118,10 @@ describe("GET /api/exports", () => {
     mocks.getCurrentUser.mockResolvedValue(user);
     mocks.listLotExportRows.mockResolvedValue([lotRow]);
     mocks.listMovementExportRows.mockResolvedValue([movementRow]);
+    mocks.listOrderExportRows.mockResolvedValue([
+      orderRow,
+      { ...orderRow, allergenCode: "R-002", quantity: 1 }
+    ]);
     mocks.buildExportWorkbook.mockResolvedValue(Buffer.from("xlsx"));
     mocks.auditCreate.mockResolvedValue({ id: "audit-1" });
     mocks.transaction.mockImplementation(async (operation: (tx: object) => unknown) =>
@@ -127,7 +151,9 @@ describe("GET /api/exports", () => {
   });
 
   it("builds and audits a filtered inventory workbook", async () => {
-    const response = await GET(request("report=inventory&q=%20R-001%20&status=LOW_STOCK"));
+    const response = await GET(request(
+      "report=inventory&q=%20R-001%20&status=LOW_STOCK&warehouse=FINISHED_GOODS"
+    ));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe(
@@ -138,7 +164,12 @@ describe("GET /api/exports", () => {
     expect(await response.text()).toBe("xlsx");
     expect(mocks.listLotExportRows).toHaveBeenCalledWith(
       expect.anything(),
-      { q: "R-001", status: "LOW_STOCK", now: expect.any(Date) }
+      {
+        q: "R-001",
+        status: "LOW_STOCK",
+        warehouse: "FINISHED_GOODS",
+        now: expect.any(Date)
+      }
     );
     expect(mocks.transaction).toHaveBeenCalledWith(
       expect.any(Function),
@@ -147,6 +178,7 @@ describe("GET /api/exports", () => {
     expect(mocks.buildExportWorkbook).toHaveBeenCalledWith(expect.objectContaining({
       inventory: [expect.objectContaining({
         reagentCode: "R-001",
+        warehouse: "완제품",
         currentQuantity: 7,
         isActive: true
       })],
@@ -155,7 +187,8 @@ describe("GET /api/exports", () => {
         generatedBy: "관리자 (admin)",
         filters: [
           { label: "검색어", value: "R-001" },
-          { label: "상태", value: "재고부족" }
+          { label: "상태", value: "재고부족" },
+          { label: "창고", value: "완제품" }
         ]
       })
     }));
@@ -170,21 +203,29 @@ describe("GET /api/exports", () => {
 
   it("builds selected datasets into one workbook with namespaced filters", async () => {
     const response = await GET(request(
-      "report=combined&datasets=inventory,movements&inventoryQ=LOT&inventoryStatus=EXPIRING&movementQ=ORD&from=2026-07-01&to=2026-07-13&type=OUT"
+      "report=combined&datasets=inventory,movements&inventoryQ=LOT&inventoryStatus=EXPIRING&inventoryWarehouse=SAMPLE&movementQ=ORD&movementWarehouse=RETURNED&from=2026-07-01&to=2026-07-13&type=OUT"
     ));
 
     expect(response.status).toBe(200);
     expect(mocks.listLotExportRows).toHaveBeenCalledWith(
       expect.anything(),
-      { q: "LOT", status: "EXPIRING", now: expect.any(Date) }
+      { q: "LOT", status: "EXPIRING", warehouse: "SAMPLE", now: expect.any(Date) }
     );
     expect(mocks.listMovementExportRows).toHaveBeenCalledWith(
       expect.anything(),
-      { q: "ORD", from: "2026-07-01", to: "2026-07-13", type: "OUT" }
+      {
+        q: "ORD",
+        from: "2026-07-01",
+        to: "2026-07-13",
+        type: "OUT",
+        warehouse: "RETURNED"
+      }
     );
     expect(mocks.buildExportWorkbook).toHaveBeenCalledWith(expect.objectContaining({
       inventory: expect.any(Array),
       movements: [expect.objectContaining({
+        warehouse: "완제품",
+        destinationWarehouse: null,
         recordedQuantity: 3,
         stockDelta: -3,
         referenceType: "출고",
@@ -194,6 +235,56 @@ describe("GET /api/exports", () => {
     }));
     expect(mocks.auditCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({ action: "COMBINED_EXPORT" })
+    });
+  });
+
+  it("builds and audits a KST date-filtered order-item workbook", async () => {
+    const response = await GET(request(
+      "report=orders&q=%20R-001%20&from=2026-07-21&to=2026-07-21"
+    ));
+
+    expect(response.status).toBe(200);
+    expect(mocks.listOrderExportRows).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        q: "R-001",
+        from: "2026-07-21",
+        to: "2026-07-21"
+      }
+    );
+    expect(mocks.transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: "RepeatableRead", maxWait: 5_000, timeout: 15_000 }
+    );
+    expect(mocks.buildExportWorkbook).toHaveBeenCalledWith(expect.objectContaining({
+      inventory: undefined,
+      movements: undefined,
+      orders: [
+        expect.objectContaining({
+          orderNo: "ORD-20260721-001",
+          reagentCode: "R-001",
+          quantity: 3,
+          hasImage: true
+        }),
+        expect.objectContaining({ reagentCode: "R-002", quantity: 1 })
+      ],
+      metadata: expect.objectContaining({
+        filters: [
+          { label: "검색어", value: "R-001" },
+          { label: "주문일", value: "2026-07-21 ~ 2026-07-21" }
+        ]
+      })
+    }));
+    expect(response.headers.get("content-disposition")).toContain("orders_");
+    const audit = mocks.auditCreate.mock.calls[0][0].data;
+    expect(audit).toMatchObject({
+      action: "ORDER_EXPORT",
+      entityType: "DATA_EXPORT",
+      actorId: "user-1"
+    });
+    const description = audit.description as string;
+    expect(JSON.parse(description.slice(description.indexOf("{")))).toMatchObject({
+      counts: { orders: 1, orderItems: 2 }
     });
   });
 
@@ -216,6 +307,32 @@ describe("GET /api/exports", () => {
       code: "EXPORT_FILTER_STATUS_INVALID",
       message: "재고 상태가 올바르지 않습니다."
     });
+
+    const invalidWarehouseResponse = await GET(request(
+      "report=inventory&warehouse=finished"
+    ));
+    expect(invalidWarehouseResponse.status).toBe(400);
+    expect(await json(invalidWarehouseResponse)).toMatchObject({
+      code: "EXPORT_FILTER_WAREHOUSE_INVALID",
+      message: "창고 구분이 올바르지 않습니다."
+    });
+  });
+
+  it("returns a validation response for an invalid order date range", async () => {
+    mocks.listOrderExportRows.mockRejectedValue(
+      new Error("EXPORT_FILTER_DATE_RANGE_INVALID")
+    );
+
+    const response = await GET(request(
+      "report=orders&from=2026-07-22&to=2026-07-21"
+    ));
+
+    expect(response.status).toBe(400);
+    expect(await json(response)).toMatchObject({
+      code: "EXPORT_FILTER_DATE_RANGE_INVALID"
+    });
+    expect(mocks.buildExportWorkbook).not.toHaveBeenCalled();
+    expect(mocks.auditCreate).not.toHaveBeenCalled();
   });
 
   it("fails closed when a filter belongs to a different report contract", async () => {
@@ -283,6 +400,20 @@ describe("GET /api/exports", () => {
     }]);
 
     const response = await GET(request("report=inventory"));
+
+    expect(response.status).toBe(413);
+    expect(await json(response)).toMatchObject({ code: "EXPORT_CELL_TEXT_TOO_LARGE" });
+    expect(mocks.buildExportWorkbook).not.toHaveBeenCalled();
+    expect(mocks.auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("applies the cell-text budget to order rows before workbook creation", async () => {
+    mocks.listOrderExportRows.mockResolvedValue([{
+      ...orderRow,
+      memo: "가".repeat(32_001)
+    }]);
+
+    const response = await GET(request("report=orders"));
 
     expect(response.status).toBe(413);
     expect(await json(response)).toMatchObject({ code: "EXPORT_CELL_TEXT_TOO_LARGE" });

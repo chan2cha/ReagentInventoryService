@@ -12,10 +12,11 @@ The Prisma schema keeps technical names for consistency, while the UI now uses f
 | `ReagentLot` | 입고분 / 제조번호별 재고 |
 | `lotNo` | 제조번호 |
 | `expirationDate` | 유통기한 |
-| `currentQuantity` | 현재 수량 |
+| `WarehouseStock.quantity` | 창고별 현재 수량의 단일 원천 |
 | `initialQuantity` | 입고 수량 |
 | `StockMovement` | 입출고 이력 |
 | `REVERSE` | 출고취소/재고복구 기록 |
+| `TRANSFER` | 창고 간 재고 이동 기록 |
 | FEFO | 유통기한 빠른 순 |
 
 ## Diagram
@@ -51,9 +52,16 @@ erDiagram
     datetime expirationDate
     datetime receivedDate
     int initialQuantity
-    int currentQuantity
     string memo
     boolean isActive
+    datetime createdAt
+    datetime updatedAt
+  }
+
+  WarehouseStock {
+    string reagentLotId PK,FK
+    Warehouse warehouse PK
+    int quantity
     datetime createdAt
     datetime updatedAt
   }
@@ -81,33 +89,21 @@ erDiagram
     datetime updatedAt
   }
 
+  OrderImage {
+    string id PK
+    string orderId FK,UK
+    string fileName
+    string contentType
+    int byteSize
+    bytes data
+    datetime createdAt
+  }
+
   OrderItem {
     string id PK
     string orderId FK
     string allergenId FK
     int quantity
-  }
-
-  OrderTemplate {
-    string id PK
-    string name
-    string nameKey UK
-    string description
-    boolean isActive
-    int sortOrder
-    int version
-    string createdBy FK
-    string updatedBy FK
-    datetime createdAt
-    datetime updatedAt
-  }
-
-  OrderTemplateItem {
-    string id PK
-    string templateId FK
-    string allergenId FK
-    int quantity
-    int position
   }
 
   Shipment {
@@ -132,6 +128,8 @@ erDiagram
     string reagentLotId FK
     StockMovementType type
     int quantity
+    Warehouse warehouse
+    Warehouse destinationWarehouse
     string reason
     string refType
     string refId
@@ -150,25 +148,22 @@ erDiagram
   }
 
   User ||--o{ Order : creates
-  User ||--o{ OrderTemplate : creates
-  User ||--o{ OrderTemplate : updates
   User ||--o{ Shipment : ships
   User ||--o{ StockMovement : records
   User ||--o{ AuditLog : acts
 
   Allergen ||--o{ ReagentLot : has
   Allergen ||--o{ OrderItem : ordered_as
-  Allergen ||--o{ OrderTemplateItem : reused_as
 
   Client ||--o{ Order : places
 
   Order ||--o{ OrderItem : contains
+  Order ||--o| OrderImage : has
   Order ||--o{ Shipment : ships_as
-
-  OrderTemplate ||--|{ OrderTemplateItem : contains
 
   Shipment ||--o{ ShipmentItem : contains
   ReagentLot ||--o{ ShipmentItem : allocated_from
+  ReagentLot ||--o{ WarehouseStock : stored_as
   ReagentLot ||--o{ StockMovement : tracked_by
 ```
 
@@ -178,12 +173,12 @@ erDiagram
 |---|---|
 | `User` | System user and role information. |
 | `Allergen` | Master data for allergen/reagent item codes. |
-| `ReagentLot` | LOT-level inventory with expiration and quantity. |
+| `ReagentLot` | Stable LOT identity, receipt, and expiration data. |
+| `WarehouseStock` | The authoritative mutable quantity for one LOT and warehouse. |
 | `Client` | Customer or hospital information. |
 | `Order` | Customer order header. |
+| `OrderImage` | Optional authenticated image attachment, one per order. |
 | `OrderItem` | Allergen and quantity requested in an order. |
-| `OrderTemplate` | Globally reusable order-item set; it is intentionally not mapped to a client. |
-| `OrderTemplateItem` | Ordered reagent and default quantity stored in an order template. |
 | `Shipment` | Shipment header for an order. |
 | `ShipmentItem` | Actual LOT allocations shipped. |
 | `StockMovement` | Inventory movement audit log. |
@@ -196,16 +191,13 @@ erDiagram
 | Allergen code uniqueness | `Allergen.code` is unique. |
 | User login ID uniqueness | `User.loginId` is unique. |
 | Order number uniqueness | `Order.orderNo` is unique. |
+| Order image | `OrderImage.orderId` is unique; content is JPEG/PNG/WebP, 1–3 MiB, and byte length must match metadata. |
 | LOT uniqueness | `ReagentLot` is unique by `allergenId + lotNo + expirationDate`. |
-| LOT inventory unit | Inventory is managed at the `ReagentLot` level, not only at the allergen level. |
+| Warehouse balance unit | Inventory is managed by the unique `reagentLotId + warehouse` balance; `ReagentLot` does not duplicate current quantity. |
 | Shipment allocation | Actual outbound stock is recorded through `ShipmentItem.reagentLotId`. |
-| Movement audit | Stock changes are tracked through `StockMovement`. |
-| Global order templates | `OrderTemplate` has no `Client` foreign key and is shared across all customer orders. |
-| Template name uniqueness | Normalized `OrderTemplate.nameKey` is unique. |
-| Template item uniqueness | Each reagent and each position can occur only once per template. |
-| Active reagent policy | Create, update, and reactivation require every template reagent to be active; a template containing a reagent deactivated later cannot be applied to an order draft. |
-| Optimistic concurrency | Template update and activation changes compare `version` and increment it atomically. |
-| Template audit | Create, update, activation, and deactivation write an `AuditLog` entry in the same transaction. |
+| Finished-goods shipment | Normal and replacement shipments allocate only `FINISHED_GOODS` balances. |
+| Movement audit | Stock changes are tracked through `StockMovement`; a partial warehouse move is one `TRANSFER` row with source and destination. |
+| Disposal distinction | Moving into `DISPOSAL` preserves physical quantity; `DISPOSE` removes quantity after actual disposal. |
 
 ## Enums
 
@@ -243,6 +235,17 @@ erDiagram
 | `ADJUST` | Manual adjustment |
 | `DISPOSE` | Disposal |
 | `REVERSE` | Shipment cancellation / stock restoration |
+| `TRANSFER` | Warehouse-to-warehouse transfer with zero total inventory delta |
+
+### Warehouse
+
+| Value | Meaning |
+|---|---|
+| `FINISHED_GOODS` | 완제품 |
+| `SAMPLE` | 검체 |
+| `RETURNED` | 반품 |
+| `NONCONFORMING` | 부적합 |
+| `DISPOSAL` | 폐기 |
 
 ## Indexes
 
@@ -251,17 +254,13 @@ erDiagram
 | `Allergen` | `name` |
 | `ReagentLot` | `lotNo` |
 | `ReagentLot` | `expirationDate` |
-| `ReagentLot` | `currentQuantity` |
+| `WarehouseStock` | `warehouse, quantity` |
 | `Order` | `status` |
 | `Order` | `createdAt` |
-| `OrderTemplate` | `isActive, sortOrder, name` |
-| `OrderTemplate` | `createdBy` |
-| `OrderTemplate` | `updatedBy` |
-| `OrderTemplateItem` | unique `templateId, allergenId` |
-| `OrderTemplateItem` | unique `templateId, position` |
-| `OrderTemplateItem` | `allergenId` |
 | `AuditLog` | `createdAt` |
 | `AuditLog` | `entityType, entityId` |
 | `AuditLog` | `actorId` |
 | `Shipment` | `shippedAt` |
 | `StockMovement` | `createdAt` |
+| `StockMovement` | `warehouse, createdAt` |
+| `StockMovement` | `destinationWarehouse, createdAt` |

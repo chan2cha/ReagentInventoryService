@@ -1,6 +1,6 @@
 # Current Implementation Status
 
-Last updated: 2026-07-13
+Last updated: 2026-07-21
 
 ## Summary
 
@@ -9,12 +9,12 @@ The application is now a Next.js App Router service backed by Prisma and Supabas
 The main operational workflow is implemented end to end:
 
 1. Register inbound reagent stock.
-2. View stock by reagent, manufacture number, expiration date, and quantity.
+2. View stock by reagent, manufacture number, expiration date, warehouse, and quantity.
 3. Register customer orders.
 4. Cancel orders before shipment.
 5. Ship orders using earliest-expiring stock first.
 6. Cancel shipments and restore stock.
-7. Track inbound, outbound, adjustment, disposal, and reversal history.
+7. Track inbound, outbound, adjustment, disposal, reversal, and partial warehouse-transfer history.
 8. View operational status on the dashboard.
 9. Authenticate users with a signed httpOnly cookie session.
    Sessions are version-bound and are revoked after password resets or account deactivation.
@@ -33,16 +33,16 @@ The main operational workflow is implemented end to end:
 22. Run isolated PostgreSQL integration tests without touching operational data.
 23. Page high-volume operational and administration lists with database-level count/skip/take queries.
 24. Search operational and administration lists with database-level, case-insensitive partial matching where supported.
-25. Manage globally reusable order sets and apply them idempotently to editable multi-item order drafts.
-26. Use one reusable set as an order's editable baseline, preserve manual rows through set changes, and keep large set collections usable through in-form search, selected-only filtering, and progressive disclosure.
-27. Export filtered stock and movement data as individual or selected combined XLSX sheets with access control, size limits, and audit records.
-28. Detect expiry-driven proactive replacement candidates from original shipment LOTs, confirm client remaining quantity, ship eligible replacement LOTs, and record return disposition and audit history.
+25. Export filtered stock and movement data as individual or selected combined XLSX sheets with access control, size limits, and audit records.
+26. Detect expiry-driven proactive replacement candidates from original shipment LOTs, confirm client remaining quantity, ship eligible replacement LOTs, and record return disposition and audit history.
+27. Keep authoritative balances in `WarehouseStock` for finished goods, samples, returns, nonconforming goods, and disposal, and transfer partial quantities atomically between them.
+28. Register orders through searchable client/reagent controls and optionally store one validated, authenticated 3 MiB JPEG/PNG/WebP attachment in the same transaction.
 
 List pagination uses 20 rows per page and URL query parameters. Audit, movements, orders, lots, clients, allergens, and users use `page`; shipments preserve independent `ordersPage` and `historyPage` values for the two lists on the same screen.
 
 List search uses URL query parameters and remains active while paging. Shipments provide independent search terms for pending orders and shipment history.
 
-Authorized users can export all rows matching the current `/lots` or `/movements` search directly from those screens, independently of the visible 20-row page. `/exports` provides separate filters and individual or selected combined workbooks.
+Authorized users can export all rows matching the current `/lots` or `/movements` search, warehouse and status/type directly from those screens, independently of the visible 20-row page. `/exports` provides separate filters and individual or selected combined workbooks.
 
 User-facing labels have been revised to use operator-friendly terms:
 
@@ -100,9 +100,8 @@ Authenticated screens use the official company logo in a white sidebar, Shinyoun
 | `/` | Implemented | DB-backed operational dashboard. |
 | `/lots` | Implemented | DB-backed stock list by reagent/manufacture number/expiration. |
 | `/receiving` | Implemented | Creates inbound stock and inbound movement history. |
-| `/orders` | Implemented | Lists orders, supports order cancellation. |
-| `/orders/new` | Implemented | Creates multi-item orders manually or from one searchable baseline set, with exact/modified state, safe set switching, and six-at-a-time disclosure. |
-| `/orders/templates` | Implemented | `ADMIN`/`ORDER_MANAGER` management of global order sets, items, and activation state. |
+| `/orders` | Implemented | Lists orders and protected attachment links, supports order cancellation. |
+| `/orders/new` | Implemented | Creates multi-item orders with searchable client/reagent selection and one optional validated image. |
 | `/shipments` | Implemented | Ships orders, shows recent shipments, supports shipment cancellation. |
 | `/replacements` | Implemented | `ADMIN`/`SHIPMENT_MANAGER` proactive replacement candidate review, exclusion, confirmation, FEFO replacement shipment, and return disposition; `ADMIN` can manage notification and replacement shelf-life thresholds. |
 | `/clients` | Implemented | DB-backed client registration, editing, and activation management. |
@@ -119,8 +118,8 @@ Authenticated screens use the official company logo in a white sidebar, Shinyoun
 | Role | Read Access | Write Access | Data Export |
 |---|---|---|---|
 | `ADMIN` | All operational screens | All operations and administration | Allowed |
-| `ORDER_MANAGER` | All operational data | Order registration/cancellation and reusable order-set management | Allowed |
-| `SHIPMENT_MANAGER` | All operational data | Receiving, shipment processing/cancellation, and stock adjustment | Allowed |
+| `ORDER_MANAGER` | All operational data | Order registration and cancellation | Allowed |
+| `SHIPMENT_MANAGER` | All operational data | Receiving, shipment processing/cancellation, warehouse stock adjustment and transfer | Allowed |
 | `VIEWER` | All operational data | None | Denied |
 
 Write-only navigation and table action columns are hidden when the current role lacks the capability. `DATA_EXPORT` similarly hides `/exports` navigation and stock/movement download controls from `VIEWER`. Direct page and `/api/exports` access retain independent authentication, mandatory-password-change, and capability checks.
@@ -140,10 +139,10 @@ Files:
 Behavior:
 
 - Loads active reagent list.
-- Validates reagent, manufacture number, quantity, inbound date, and expiration date.
+- Validates reagent, manufacture number, quantity, warehouse, inbound date, and expiration date.
 - Prevents duplicate stock by `allergenId + lotNo + expirationDate`.
-- Creates `ReagentLot`.
-- Creates `StockMovement` with type `IN`.
+- Creates `ReagentLot` and the selected `WarehouseStock` balance; `ReagentLot` no longer duplicates a mutable current quantity.
+- Creates `StockMovement` with type `IN` and the selected warehouse.
 - Revalidates stock and movement pages.
 
 ### Order Registration
@@ -157,37 +156,12 @@ Files:
 Behavior:
 
 - Loads active clients and reagents.
-- Loads active reusable order sets independently so a template-query failure does not disable manual order entry.
 - Creates order number in `ORD-YYYYMMDD-###` format.
 - Creates `Order` with status `RECEIVED`.
 - Creates one or more `OrderItem` records in the same transaction.
 - Allows multiple reagent and quantity rows in the order form.
 - Prevents duplicate reagent selection in the UI and merges duplicate rows on the server if submitted.
-- Applies a selected order set as an editable draft: unrelated manual rows remain, matching rows receive the set's default quantity, and missing rows are appended.
-- Applying the same set repeatedly is idempotent and never increments quantities or duplicates items.
 - Revalidates dashboard, order, and shipment pages.
-
-### Reusable Order Sets
-
-Files:
-
-- `prisma/migrations/20260712150000_add_order_templates/migration.sql`
-- `src/app/orders/templates/page.tsx`
-- `src/app/orders/templates/actions.ts`
-- `src/services/order-template-service.ts`
-- `src/domain/order-template.ts`
-- `src/domain/order-draft.ts`
-
-Behavior:
-
-- Stores globally reusable sets in `OrderTemplate` and ordered default items in `OrderTemplateItem`; there is intentionally no client relationship.
-- Allows `ADMIN` and `ORDER_MANAGER` users to create, edit, activate, deactivate, search, and apply sets.
-- Requires a unique normalized name, one to 100 distinct reagents, and positive integer default quantities.
-- Requires every reagent to be active when a set is created, edited, or reactivated.
-- Keeps a set visible in management after one of its reagents is later deactivated, but warns about the reagent and blocks application until the set is corrected.
-- Uses `version` compare-and-swap updates for edits and activation changes so stale forms cannot overwrite a newer change.
-- Replaces the item collection and writes `ORDER_TEMPLATE_CREATE`, `ORDER_TEMPLATE_UPDATE`, `ORDER_TEMPLATE_ACTIVATE`, or `ORDER_TEMPLATE_DEACTIVATE` audit records in the same serializable transaction.
-- Shows only active sets on order registration and preserves fully manual multi-item ordering when set loading is unavailable.
 
 ### Order Cancellation
 
@@ -217,13 +191,13 @@ Behavior:
 
 - Loads orders in `RECEIVED` or `READY_TO_SHIP`.
 - Excludes expired and future-received LOTs using the current Korean calendar date; a LOT remains valid through its expiration date.
-- Allocates eligible stock from earliest expiration first.
+- Allocates eligible finished-goods stock from earliest expiration first; sample, returned, nonconforming, and disposal balances are never shippable.
 - Fails the whole transaction if stock is insufficient.
-- Claims the order state and decrements each LOT with conditional updates so concurrent requests cannot create duplicate active shipments or negative stock.
+- Claims the order state and conditionally decrements each `(reagentLotId, FINISHED_GOODS)` balance so concurrent requests cannot create duplicate active shipments or negative stock.
 - Runs at `Serializable` isolation and retries Prisma `P2034` or compare-and-set conflicts up to a fixed limit.
 - Creates `Shipment`.
 - Creates `ShipmentItem`.
-- Decrements `ReagentLot.currentQuantity`.
+- Decrements `WarehouseStock.quantity` for `FINISHED_GOODS`.
 - Creates `StockMovement` with type `OUT`.
 - Updates `Order.status` to `SHIPPED`.
 
@@ -240,7 +214,7 @@ Behavior:
 - Shows recent shipment history.
 - Allows cancellation of active shipments.
 - Conditionally claims `SHIPPED` to `CANCELLED`, so concurrent cancellation requests cannot restore stock twice.
-- Restores `ReagentLot.currentQuantity` from `ShipmentItem`.
+- Restores the `FINISHED_GOODS` `WarehouseStock.quantity` from `ShipmentItem`.
 - Creates `StockMovement` with type `REVERSE`.
 - Restores `Order.status` to `READY_TO_SHIP`.
 
@@ -253,9 +227,30 @@ Files:
 
 Behavior:
 
-- Shows stock movement records with reagent, manufacture number, quantity, reason, and date.
-- Maps internal movement types to user-facing Korean labels, including `REVERSE` as `출고취소/복구`.
-- Filters the screen by a shared search term and movement type, preserving both through pagination and the current-condition Excel shortcut.
+- Shows stock movement records with reagent, manufacture number, quantity, reason, date, source/affected warehouse, and transfer destination.
+- Maps internal movement types to user-facing Korean labels, including `REVERSE` as `출고취소/복구` and `TRANSFER` as `창고이동`.
+- Filters the screen by a shared search term, movement type and source-or-destination warehouse, preserving them through pagination and the current-condition Excel shortcut.
+
+### Warehouse Inventory and Partial Transfer
+
+Files:
+
+- `prisma/schema.prisma`
+- `src/domain/warehouse.ts`
+- `src/app/lots/inventory-management-dialog.tsx`
+- `src/app/lots/actions.ts`
+- `src/services/warehouse-transfer-service.ts`
+
+Behavior:
+
+- Uses fixed warehouses `FINISHED_GOODS`, `SAMPLE`, `RETURNED`, `NONCONFORMING`, and `DISPOSAL`, displayed as 완제품, 검체, 반품, 부적합, and 폐기.
+- Uses `WarehouseStock` keyed by `(reagentLotId, warehouse)` as the only mutable inventory quantity.
+- Lists one inventory row per LOT and warehouse and supports warehouse filtering and export.
+- Opens one `재고 관리` dialog per row and switches between stock adjustment and warehouse transfer without duplicating table actions.
+- Allows `ADMIN` and `SHIPMENT_MANAGER` to move a positive partial quantity between different warehouses with a required reason.
+- Conditionally decrements the source and upserts the destination within a retryable Serializable transaction.
+- Records one positive `TRANSFER` movement with both warehouses and one `STOCK_TRANSFER` audit record in the same transaction.
+- Keeps total physical quantity unchanged during transfer. Moving into the disposal warehouse is quarantine/location movement; a later `DISPOSE` operation removes actual stock.
 
 ### Excel Data Export
 
@@ -274,17 +269,17 @@ Files:
 Behavior:
 
 - Grants `DATA_EXPORT` to `ADMIN`, `ORDER_MANAGER`, and `SHIPMENT_MANAGER`; `VIEWER` cannot see the controls and receives `403` from direct API calls.
-- Adds current-condition exports to `/lots` and `/movements`; inventory preserves `q` and computed inventory status, while movements preserve both `q` and movement type, and all matching rows are exported rather than only the current page.
+- Adds current-condition exports to `/lots`, `/movements`, and `/orders`; orders preserve search plus inclusive KST `from`/`to` dates, and all matching rows are exported rather than only the current page.
 - Provides individual inventory and movement downloads plus a selected combined workbook from `/exports`.
 - Filters inventory by search term and `NORMAL`, `LOW_STOCK`, `OUT_OF_STOCK`, `EXPIRING`, or `EXPIRED` status using the same expiration/quantity/minimum-stock precedence as the screen. Filters movement exports by search term, inclusive Korean-calendar `from`/`to` dates, and movement type.
-- Creates `내보내기정보` first, followed by the requested `재고현황` and/or `입출고이력` sheets. Sheets use real date and numeric cells, frozen headers, filters, and fixed column formats.
+- Creates `내보내기정보` first, followed by the requested `재고현황`, `입출고이력`, or per-item `주문내역` sheet. Sheets use real date and numeric cells, frozen headers, filters, and fixed column formats.
 - Separates the stored movement quantity from the effective stock delta: outbound is negative, inbound and reversal are positive, and adjustment/disposal retain their recorded sign.
 - Resolves shipment references to order and client where available and includes the movement actor.
 - Reads at most 10,001 rows to reject any requested sheet above 10,000 rows, and rejects generated files above 4,000,000 bytes.
 - Reads each request inside a bounded `Repeatable Read` transaction so combined sheets and movement shipment references share one database snapshot; workbook construction and audit writing happen after that read transaction is released.
 - Rejects report-mismatched parameters and validates per-cell plus aggregate UTF-8 text budgets before ExcelJS materializes the workbook.
 - Uses lean projections and stable unique tie-breakers. Export DB failures are returned as errors and never replaced with sample rows.
-- Writes `INVENTORY_EXPORT`, `MOVEMENT_EXPORT`, or `COMBINED_EXPORT` with actor, counts, and compact filter details before releasing a successful file. A failed audit write prevents download.
+- Writes `INVENTORY_EXPORT`, `MOVEMENT_EXPORT`, `ORDER_EXPORT`, or `COMBINED_EXPORT` with actor, counts, and compact filter details before releasing a successful file. A failed audit write prevents download.
 
 ### Stock Adjustment and Disposal
 
@@ -297,12 +292,12 @@ Files:
 
 Behavior:
 
-- Allows `ADMIN` and `SHIPMENT_MANAGER` users to adjust LOT stock from `/lots`.
+- Allows `ADMIN` and `SHIPMENT_MANAGER` users to adjust a selected LOT and warehouse balance from `/lots`.
 - Opens a row-specific adjustment dialog with explicit add, subtract, and disposal operations.
 - Accepts positive quantities only and previews the resulting stock before submission.
 - Warns when the result falls below minimum stock and blocks changes that would make stock negative.
 - Requires a reason.
-- Uses conditional atomic increments/decrements and blocks changes that would make current quantity negative, including concurrent changes.
+- Uses conditional atomic increments/decrements on `WarehouseStock.quantity` and blocks changes that would make that warehouse balance negative, including concurrent changes.
 - Creates `StockMovement` with type `ADJUST` or `DISPOSE`.
 - Revalidates dashboard, stock, and movement pages.
 
@@ -319,8 +314,8 @@ Behavior:
 
 - Stores a reagent-specific minimum stock value in `Allergen.minStock`.
 - Seeds minimum stock values for the sample reagents.
-- Marks stock entries below the configured threshold as `재고부족`.
-- Calculates the dashboard low-stock count using each reagent's configured threshold.
+- Marks finished-goods stock entries below the configured threshold as `재고부족`.
+- Calculates the dashboard low-stock count from finished-goods balances, excluding non-shippable warehouses.
 
 ### Reagent and Client Management
 
@@ -370,7 +365,7 @@ Behavior:
 - Runs unknown, inactive, and wrong-password login attempts through the same PBKDF2 verification path and returns the same credential-failure response.
 - Tests explicit role allow/deny decisions used by server-side authorization.
 - Requires a reason when cancelling an order or shipment.
-- Records order cancellation, shipment processing/cancellation, reusable order-set writes, user registration, activation changes, administrator password resets, and successful data exports.
+- Records order cancellation, shipment processing/cancellation, user registration, activation changes, administrator password resets, and successful data exports.
 - Uses `INVENTORY_EXPORT`, `MOVEMENT_EXPORT`, and `COMBINED_EXPORT` for export audit records with entity type `DATA_EXPORT`.
 - Stores business-write audit records in the same transaction as the related update; export audit records are written after workbook validation and before file release.
 - Shows the latest 200 records to administrators at `/audit`, including time, action, detail, and actor.
@@ -430,11 +425,18 @@ Migrations:
 
 - `prisma/migrations/20260710000000_baseline/migration.sql`
 - `prisma/migrations/20260712000000_enforce_inventory_invariants/migration.sql`
-- `prisma/migrations/20260712150000_add_order_templates/migration.sql`
+- `prisma/migrations/20260712150000_add_order_templates/migration.sql` (immutable historical migration)
+- `prisma/migrations/20260713100000_add_user_session_version/migration.sql`
+- `prisma/migrations/20260713110000_add_proactive_replacements/migration.sql`
+- `prisma/migrations/20260713120000_add_replacement_policy/migration.sql`
+- `prisma/migrations/20260721150000_remove_order_templates/migration.sql`
+- `prisma/migrations/20260721160000_add_transfer_movement_type/migration.sql`
+- `prisma/migrations/20260721161000_add_warehouse_inventory/migration.sql`
 - Operations guide: `docs/11_database_migrations.md`
-- The existing Supabase schema was registered with `20260710000000_baseline`. On 2026-07-12 the operational database passed the P0 preflight and both forward migrations through `20260712150000_add_order_templates` were applied successfully. On 2026-07-13 it also applied `20260713100000_add_user_session_version` and `20260713110000_add_proactive_replacements`; Prisma status is current.
+- The existing Supabase schema was registered with `20260710000000_baseline`. On 2026-07-12 the operational database passed the P0 preflight and applied both forward migrations through `20260712150000_add_order_templates`; that applied migration remains in source history and must not be deleted or rewritten. On 2026-07-13 it also applied the session-version and proactive-replacement migrations.
 - The P0 invariant migration adds quantity/date CHECK constraints, duplicate-order-item protection, one active shipment per order, and foreign-key traversal indexes. Run its documented preflight before deployment.
-- The order-set migration adds `OrderTemplate` and `OrderTemplateItem`, normalized-name and per-template uniqueness, positive quantity/version checks, actor foreign keys, and no client mapping.
+- `20260721150000_remove_order_templates` is the forward removal: it drops the retired child and parent tables without rewriting migration history. Existing generic `AuditLog` rows remain as historical records because they do not use foreign keys to those tables.
+- `20260721160000_add_transfer_movement_type` commits the PostgreSQL enum value separately; `20260721161000_add_warehouse_inventory` backfills every legacy quantity into `FINISHED_GOODS`, verifies the copy, removes `ReagentLot.currentQuantity`, and applies warehouse and transfer CHECK constraints.
 
 Seed currently creates:
 
@@ -470,21 +472,26 @@ For Supabase session pooler use during seed in this workspace, commands were run
 The following checks passed after the latest implementation updates:
 
 ```bash
+npm run prisma:validate
+npm run prisma:generate
 npm run typecheck
 npm run lint
 npm run build
 npm test
+npm run prisma:migrate:status
+npm run test:integration
 ```
 
 Date handling is centralized in `src/lib/date.ts`. Korean midnight boundaries, date-only expiration comparisons, and UTC query ranges are covered by automated tests.
 
-The external-service-free suite currently contains 156 unit and policy tests. In addition to the prior authentication, transaction, validation, redirect, and reusable-order-set regressions, it covers version-bound session revocation, constant-cost invalid-credential handling, the real-data sidebar shipment count and failure fallback, inventory-screen search/status pagination, inventory status precedence and export matching, movement-screen search/type predicate reuse, export filter validation and Korean date boundaries, movement labels and stock-delta direction, lean export projections, row/text/file limits, shipment-reference resolution, repeatable-read invocation, report-specific parameter rejection, structured audit details, workbook sheet/cell formatting, download authorization, and audit-before-release behavior. Integration tests use `TEST_DATABASE_URL`, reject both runtime and direct operational DB targets even when a different database username or pooler port is supplied, and run separately with `npm run test:integration`. The 12-test integration suite calls the production services and covers the existing inventory/shipment contention cases plus reusable order-set create/search/concurrent-update/stale-version rejection/deactivation/audit behavior, stale-order rejection after reagent deactivation, concurrent order-number allocation, and filtered inventory/movement export with shipment-reference resolution.
+The external-service-free suite covers authentication, transaction, validation, redirect, manual multi-item order submission, session revocation, sidebar failure fallback, inventory and movement filtering, export limits, workbook formatting, and audit-before-release behavior. Integration tests use `TEST_DATABASE_URL`, reject both runtime and direct operational DB targets, and exercise inventory and shipment contention, stale-order rejection after reagent deactivation, concurrent order-number allocation, proactive replacement, and filtered export/reference resolution.
 
-The 156-test unit suite, typecheck, lint, Prisma validation, production build, and all 12 isolated PostgreSQL integration tests passed on 2026-07-13. The isolated `TEST_DATABASE_URL` is current through `20260713100000_add_user_session_version`. A built Next server E2E confirmed both the unauthenticated no-store Korean JSON `401` path and an authenticated combined export with `내보내기정보`, `재고현황`, and `입출고이력` sheets, typed inventory delta, and one required `COMBINED_EXPORT` audit record. Its temporary user, reagent, lot, movement, and audit fixtures were removed and a zero-fixture cleanup check passed. The earlier authenticated Server Action E2E confirmed a `303` response, committed data, an ASCII-safe redirect header, and the correctly decoded Korean success message; its fixture was also removed immediately afterward.
+The 2026-07-13 validation record shows that the then-current unit suite, typecheck, lint, Prisma validation, production build, isolated PostgreSQL integration suite, authenticated Server Action E2E, and combined-export E2E passed. The warehouse feature's focused domain and transfer-service tests pass, but the complete commands above must be rerun after applying both warehouse migrations to the isolated database rather than relying on old totals.
 
-The operational database separately passed all nine P0 preflight checks, was backed up in PostgreSQL custom format, and successfully applied its initial forward migrations. On 2026-07-13, the session-version, proactive-replacement, and administrator-managed replacement-policy migrations were also applied; Prisma status reports all six migrations current. After correcting the saved pooler assignments, authenticated read-only production-server smoke requests using the normal `:6543` runtime connection returned HTTP 200 for `/orders/templates` and `/orders/new` without an error page. Deploy or restart the current application artifact before using the newer session and replacement workflows in the hosting environment.
+The operational database separately passed all nine P0 preflight checks, was backed up in PostgreSQL custom format, and successfully applied its initial forward migrations. Apply `20260721150000_remove_order_templates` and both warehouse migrations through the documented maintenance-window backup, status, deploy, application-cutover, and reconciliation procedure before treating an environment as current.
 
 ## Known Issues
 
 1. Write flows rely on correct Supabase pooler configuration; transaction pooler can produce Prisma prepared statement errors.
 2. Korean text in the source and documents is stored as UTF-8. Use UTF-8 when reading files in PowerShell, for example `Get-Content -Encoding UTF8`, to avoid console mojibake.
+3. The warehouse cutover removes `ReagentLot.currentQuantity`; an old application artifact is incompatible after migration. Stop writes and deploy the matching artifact in the same maintenance window.

@@ -1,30 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { buildLotWhere, buildMovementWhere } from "./export-filters";
+import { buildMovementWhere, buildOrderWhere, buildWarehouseStockWhere } from "./export-filters";
 import { lotStatusKindFromSnapshot } from "./lot-status";
 
 describe("export query filters", () => {
   it("builds the shared LOT search predicate from a trimmed query", () => {
-    expect(buildLotWhere({ q: "  EGG  " })).toEqual({
-      OR: [
+    expect(buildWarehouseStockWhere({ q: "  EGG  " })).toEqual({
+      reagentLot: { is: { OR: [
         { lotNo: { contains: "EGG", mode: "insensitive" } },
         { allergen: { is: { name: { contains: "EGG", mode: "insensitive" } } } },
         { allergen: { is: { code: { contains: "EGG", mode: "insensitive" } } } }
-      ]
+      ] } }
     });
-    expect(buildLotWhere({ q: "   " })).toEqual({});
+    expect(buildWarehouseStockWhere({ q: "   " })).toEqual({});
 
     const now = new Date("2026-07-13T03:00:00.000Z");
-    expect(buildLotWhere({ q: " EGG ", status: "LOW_STOCK" }, now)).toEqual({
+    expect(buildWarehouseStockWhere({
+      q: " EGG ",
+      status: "LOW_STOCK",
+      warehouse: "FINISHED_GOODS"
+    }, now)).toEqual({
       AND: [
-        expect.objectContaining({ OR: expect.any(Array) }),
+        { reagentLot: { is: { OR: expect.any(Array) } } },
         {
-          expirationDate: { gte: new Date("2026-08-13T00:00:00.000Z") },
-          currentQuantity: { not: 0 },
-          allergen: { is: { minStock: { gt: 0 } } }
-        }
+          quantity: { not: 0 },
+          reagentLot: { is: {
+            expirationDate: { gte: new Date("2026-08-13T00:00:00.000Z") },
+            allergen: { is: { minStock: { gt: 0 } } }
+          } }
+        },
+        { warehouse: "FINISHED_GOODS" }
       ]
     });
-    expect(() => buildLotWhere({ status: "low" }, now)).toThrow("EXPORT_FILTER_STATUS_INVALID");
+    expect(() => buildWarehouseStockWhere({ status: "low" }, now))
+      .toThrow("EXPORT_FILTER_STATUS_INVALID");
+    expect(() => buildWarehouseStockWhere({ warehouse: "finished" }, now))
+      .toThrow("EXPORT_FILTER_WAREHOUSE_INVALID");
 
     expect([
       lotStatusKindFromSnapshot({ currentQuantity: 0, expirationDate: "2026-07-12", minStock: 5 }, now),
@@ -40,7 +50,8 @@ describe("export query filters", () => {
       q: "  order-1 ",
       from: "2026-07-13",
       to: "2026-07-14",
-      type: "OUT"
+      type: "OUT",
+      warehouse: "FINISHED_GOODS"
     });
 
     expect(where).toMatchObject({
@@ -54,6 +65,12 @@ describe("export query filters", () => {
     expect(where.OR?.[0]).toEqual({
       reason: { contains: "order-1", mode: "insensitive" }
     });
+    expect(where.AND).toEqual([{
+      OR: [
+        { warehouse: "FINISHED_GOODS" },
+        { destinationWarehouse: "FINISHED_GOODS" }
+      ]
+    }]);
   });
 
   it("supports independent from and through-date filters", () => {
@@ -69,8 +86,42 @@ describe("export query filters", () => {
     [{ from: "2026-02-30" }, "EXPORT_FILTER_FROM_INVALID"],
     [{ to: "2026/02/20" }, "EXPORT_FILTER_TO_INVALID"],
     [{ type: "out" }, "EXPORT_FILTER_TYPE_INVALID"],
+    [{ warehouse: "finished" }, "EXPORT_FILTER_WAREHOUSE_INVALID"],
     [{ from: "2026-07-14", to: "2026-07-13" }, "EXPORT_FILTER_DATE_RANGE_INVALID"]
   ])("rejects an invalid movement filter", (filters, errorCode) => {
     expect(() => buildMovementWhere(filters)).toThrow(errorCode);
+  });
+
+  it("builds an order search with inclusive Korean calendar dates", () => {
+    const where = buildOrderWhere({
+      q: " 서울 ",
+      from: "2026-07-21",
+      to: "2026-07-21"
+    });
+
+    expect(where.createdAt).toEqual({
+      gte: new Date("2026-07-20T15:00:00.000Z"),
+      lt: new Date("2026-07-21T15:00:00.000Z")
+    });
+    expect(where.OR).toHaveLength(6);
+    expect(where.OR?.[0]).toEqual({
+      orderNo: { contains: "서울", mode: "insensitive" }
+    });
+    expect(where.OR?.[4]).toEqual({
+      items: {
+        some: {
+          allergen: {
+            is: { name: { contains: "서울", mode: "insensitive" } }
+          }
+        }
+      }
+    });
+  });
+
+  it("rejects invalid order export dates", () => {
+    expect(() => buildOrderWhere({ from: "2026-07-22", to: "2026-07-21" }))
+      .toThrow("EXPORT_FILTER_DATE_RANGE_INVALID");
+    expect(() => buildOrderWhere({ from: "2026-02-30" }))
+      .toThrow("EXPORT_FILTER_FROM_INVALID");
   });
 });

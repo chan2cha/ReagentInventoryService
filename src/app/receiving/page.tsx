@@ -7,6 +7,7 @@ import { requirePageRole } from "@/lib/auth";
 import { FlashMessage } from "@/app/flash-message";
 import { getFlashMessage } from "@/lib/flash-message";
 import { OperationGuide, guideIcons } from "../operation-guide";
+import { WAREHOUSE_KINDS, warehouseLabel } from "@/domain/warehouse";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +23,15 @@ export default async function ReceivingPage() {
     <AppShell
       active="/receiving"
       title="입고 등록"
-      description="새로 들어온 시약의 제조번호와 수량을 등록합니다."
+      description="새로 들어온 시약의 제조번호, 수량과 보관 창고를 등록합니다."
     >
       <FlashMessage value={flash} />
       <Panel title="입고 안내" note="저장 전 확인 사항">
         <OperationGuide items={[
           { title: "중복 등록 방지", description: "동일 시약·제조번호·유통기한 조합은 한 번만 등록할 수 있습니다.", icon: guideIcons.ShieldCheck },
           { title: "수량 입력 기준", description: "입고 수량은 1개 이상으로 입력하세요.", icon: guideIcons.PackageCheck },
-          { title: "저장 결과", description: "저장 즉시 현재 재고와 입고 이력에 함께 반영됩니다.", tone: "success" },
+          { title: "창고 선택", description: "입고 수량이 처음 보관될 창고를 선택하세요.", icon: guideIcons.PackageCheck },
+          { title: "저장 결과", description: "저장 즉시 선택한 창고의 재고와 입고 이력에 함께 반영됩니다.", tone: "success" },
           ...(!canSubmit ? [{ title: "목록을 불러올 수 없음", description: "시약 목록 연결 상태를 확인한 후 다시 시도하세요.", tone: "attention" as const }] : [])
         ]} />
       </Panel>
@@ -54,6 +56,14 @@ export default async function ReceivingPage() {
             <label>
               입고 수량
               <input min="1" name="quantity" placeholder="0" required type="number" />
+            </label>
+            <label>
+              입고 창고
+              <select defaultValue="FINISHED_GOODS" disabled={!canSubmit} name="warehouse" required>
+                {WAREHOUSE_KINDS.map((warehouse) => (
+                  <option key={warehouse} value={warehouse}>{warehouseLabel(warehouse)}</option>
+                ))}
+              </select>
             </label>
             <label>
               입고일

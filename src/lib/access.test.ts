@@ -14,7 +14,6 @@ describe("role access", () => {
 describe("business capabilities", () => {
   it("allows order managers to change orders but not shipments", () => {
     expect(can("ORDER_MANAGER", "ORDER_WRITE")).toBe(true);
-    expect(can("ORDER_MANAGER", "ORDER_TEMPLATE_WRITE")).toBe(true);
     expect(can("ORDER_MANAGER", "SHIPMENT_WRITE")).toBe(false);
   });
 
@@ -32,7 +31,7 @@ describe("business capabilities", () => {
   });
 
   it("keeps viewers read-only and administrators unrestricted", () => {
-    const capabilities = ["ORDER_WRITE", "ORDER_TEMPLATE_WRITE", "STOCK_WRITE", "SHIPMENT_WRITE", "MASTER_WRITE", "USER_ADMIN", "AUDIT_READ", "DATA_EXPORT"] as const;
+    const capabilities = ["ORDER_WRITE", "STOCK_WRITE", "SHIPMENT_WRITE", "MASTER_WRITE", "USER_ADMIN", "AUDIT_READ", "DATA_EXPORT"] as const;
     expect(capabilities.every((capability) => !can("VIEWER", capability))).toBe(true);
     expect(capabilities.every((capability) => can("ADMIN", capability))).toBe(true);
   });

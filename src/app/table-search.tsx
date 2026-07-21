@@ -1,7 +1,7 @@
 import { RotateCcw, Search, SlidersHorizontal } from "lucide-react";
 import type { Route } from "next";
 import Form from "next/form";
-import { ProgressLink } from "./progress-link";
+import { TableSearchResetLink } from "./table-search-reset-link";
 import { TableSearchSubmit } from "./table-search-submit";
 
 type TableSearchOption = {
@@ -9,16 +9,29 @@ type TableSearchOption = {
   value: string;
 };
 
-type TableSearchFilter = {
+type TableSearchSelectFilter = {
+  kind?: "select";
   label: string;
   name: string;
   options: readonly TableSearchOption[];
   value?: string;
 };
 
+type TableSearchDateFilter = {
+  kind: "date";
+  label: string;
+  max?: string;
+  min?: string;
+  name: string;
+  value?: string;
+};
+
+type TableSearchFilter = TableSearchSelectFilter | TableSearchDateFilter;
+
 type TableSearchProps = {
   description?: string;
   filter?: TableSearchFilter;
+  filters?: readonly TableSearchFilter[];
   paramName?: string;
   pathname: Route;
   placeholder: string;
@@ -30,6 +43,7 @@ type TableSearchProps = {
 export function TableSearch({
   description = "검색 조건을 조합해 원하는 항목만 확인하세요.",
   filter,
+  filters,
   paramName = "q",
   pathname,
   placeholder,
@@ -38,10 +52,14 @@ export function TableSearch({
   value
 }: TableSearchProps) {
   const query = value?.trim() ?? "";
-  const filterValue = filter?.value?.trim() ?? "";
-  const filterCount = Number(Boolean(query)) + Number(Boolean(filterValue));
+  const normalizedFilters = filters ?? (filter ? [filter] : []);
+  const filterCount = Number(Boolean(query)) + normalizedFilters.reduce(
+    (count, item) => count + Number(Boolean(item.value?.trim())),
+    0
+  );
   const hasFilters = filterCount > 0;
-  const isExpanded = Boolean(filter);
+  const isExpanded = normalizedFilters.length > 0;
+  const hasMultipleFilters = normalizedFilters.length > 1;
   const resetQuery = new URLSearchParams();
 
   for (const [key, item] of Object.entries(preserve)) {
@@ -49,12 +67,19 @@ export function TableSearch({
   }
 
   const resetHref = resetQuery.size ? `${pathname}?${resetQuery}` : pathname;
+  const formStateKey = [
+    `${paramName}:${query}`,
+    ...normalizedFilters.map(
+      (item) => `${item.name}:${item.value?.trim() ?? ""}`
+    )
+  ].join("\u0000");
 
   return (
     <Form
       action={pathname}
       aria-label={title}
-      className={`table-search ${isExpanded ? "table-search-expanded" : "table-search-compact"}`}
+      className={`table-search ${isExpanded ? "table-search-expanded" : "table-search-compact"}${hasMultipleFilters ? " table-search-multi-filter" : ""}`}
+      key={formStateKey}
     >
       {Object.entries(preserve).map(([key, item]) => (
         item ? <input key={key} name={key} type="hidden" value={item} /> : null
@@ -72,10 +97,10 @@ export function TableSearch({
             </span>
           </div>
           {hasFilters ? (
-            <ProgressLink className="table-search-reset" href={resetHref as never}>
+            <TableSearchResetLink className="table-search-reset" href={resetHref as never}>
               <RotateCcw aria-hidden="true" size={15} />
               <span>초기화</span>
-            </ProgressLink>
+            </TableSearchResetLink>
           ) : null}
         </div>
       ) : null}
@@ -96,24 +121,34 @@ export function TableSearch({
           </span>
         </label>
 
-        {filter ? (
-          <label className="table-search-field table-search-secondary">
-            <span className="table-search-label">{filter.label}</span>
-            <select defaultValue={filterValue} name={filter.name}>
-              {filter.options.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+        {normalizedFilters.map((item) => (
+          <label className="table-search-field table-search-secondary" key={item.name}>
+            <span className="table-search-label">{item.label}</span>
+            {item.kind === "date" ? (
+              <input
+                defaultValue={item.value?.trim() ?? ""}
+                max={item.max || undefined}
+                min={item.min || undefined}
+                name={item.name}
+                type="date"
+              />
+            ) : (
+              <select defaultValue={item.value?.trim() ?? ""} name={item.name}>
+                {item.options.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            )}
           </label>
-        ) : null}
+        ))}
 
         <TableSearchSubmit />
 
         {!isExpanded && hasFilters ? (
-          <ProgressLink className="table-search-reset" href={resetHref as never}>
+          <TableSearchResetLink className="table-search-reset" href={resetHref as never}>
             <RotateCcw aria-hidden="true" size={15} />
             <span>초기화</span>
-          </ProgressLink>
+          </TableSearchResetLink>
         ) : null}
       </div>
     </Form>

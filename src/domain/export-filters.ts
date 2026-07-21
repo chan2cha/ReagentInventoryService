@@ -8,6 +8,10 @@ import {
   isLotStatusKind,
   type LotStatusKind
 } from "./lot-status";
+import {
+  isWarehouseKind,
+  type WarehouseKind
+} from "./warehouse";
 import { addDateOnlyDays, dateOnlyUtc, koreaDateKey } from "../lib/date";
 
 const KOREA_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -17,6 +21,7 @@ const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 export type LotQueryFilters = {
   q?: string;
   status?: string;
+  warehouse?: string;
 };
 
 export type MovementQueryFilters = {
@@ -24,6 +29,13 @@ export type MovementQueryFilters = {
   from?: string;
   to?: string;
   type?: string;
+  warehouse?: string;
+};
+
+export type OrderQueryFilters = {
+  q?: string;
+  from?: string;
+  to?: string;
 };
 
 function normalizedQuery(q?: string) {
@@ -84,55 +96,90 @@ export function normalizedLotStatus(value?: string): LotStatusKind | undefined {
   return normalized;
 }
 
+function koreaCreatedAtRange(filters: { from?: string; to?: string }) {
+  const from = filters.from?.trim() ? parseKoreaDateStart(filters.from, "from") : undefined;
+  const to = filters.to?.trim() ? parseKoreaDateStart(filters.to, "to") : undefined;
+
+  if (from && to && from.getTime() > to.getTime()) {
+    throw new Error("EXPORT_FILTER_DATE_RANGE_INVALID");
+  }
+
+  if (!from && !to) return undefined;
+
+  return {
+    ...(from ? { gte: from } : {}),
+    ...(to ? { lt: new Date(to.getTime() + DAY_MS) } : {})
+  };
+}
+
+export function normalizedWarehouse(value?: string): WarehouseKind | undefined {
+  const normalized = value?.trim() ?? "";
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (!isWarehouseKind(normalized)) {
+    throw new Error("EXPORT_FILTER_WAREHOUSE_INVALID");
+  }
+
+  return normalized;
+}
+
 function lotStatusCandidateWhere(
   status: LotStatusKind,
   now: Date
-): Prisma.ReagentLotWhereInput {
+): Prisma.WarehouseStockWhereInput {
   const today = dateOnlyUtc(koreaDateKey(now));
   const afterExpiring = addDateOnlyDays(koreaDateKey(now), 31);
 
   if (status === "EXPIRED") {
-    return { expirationDate: { lt: today } };
+    return { reagentLot: { is: { expirationDate: { lt: today } } } };
   }
 
   if (status === "OUT_OF_STOCK") {
     return {
-      expirationDate: { gte: today },
-      currentQuantity: 0
+      quantity: 0,
+      reagentLot: { is: { expirationDate: { gte: today } } }
     };
   }
 
   if (status === "EXPIRING") {
     return {
-      expirationDate: { gte: today, lt: afterExpiring },
-      currentQuantity: { not: 0 }
+      quantity: { not: 0 },
+      reagentLot: { is: { expirationDate: { gte: today, lt: afterExpiring } } }
     };
   }
 
   return {
-    expirationDate: { gte: afterExpiring },
-    currentQuantity: { not: 0 },
-    ...(status === "LOW_STOCK"
-      ? { allergen: { is: { minStock: { gt: 0 } } } }
-      : {})
+    quantity: { not: 0 },
+    reagentLot: {
+      is: {
+        expirationDate: { gte: afterExpiring },
+        ...(status === "LOW_STOCK"
+          ? { allergen: { is: { minStock: { gt: 0 } } } }
+          : {})
+      }
+    }
   };
 }
 
-export function buildLotWhere(
+export function buildWarehouseStockWhere(
   filters: LotQueryFilters = {},
   now = new Date()
-): Prisma.ReagentLotWhereInput {
+): Prisma.WarehouseStockWhereInput {
   const q = normalizedQuery(filters.q);
   const status = normalizedLotStatus(filters.status);
-  const conditions: Prisma.ReagentLotWhereInput[] = [];
+  const warehouse = normalizedWarehouse(filters.warehouse);
+  const conditions: Prisma.WarehouseStockWhereInput[] = [];
 
   if (q) {
     conditions.push({
-      OR: [
+      reagentLot: { is: { OR: [
         { lotNo: { contains: q, mode: "insensitive" } },
         { allergen: { is: { name: { contains: q, mode: "insensitive" } } } },
         { allergen: { is: { code: { contains: q, mode: "insensitive" } } } }
-      ]
+      ] } }
     });
   }
 
@@ -140,22 +187,25 @@ export function buildLotWhere(
     conditions.push(lotStatusCandidateWhere(status, now));
   }
 
+  if (warehouse) {
+    conditions.push({ warehouse });
+  }
+
   if (conditions.length === 0) return {};
   if (conditions.length === 1) return conditions[0];
   return { AND: conditions };
 }
+
+/** @deprecated Prefer the model-specific name for new call sites. */
+export const buildLotWhere = buildWarehouseStockWhere;
 
 export function buildMovementWhere(
   filters: MovementQueryFilters = {}
 ): Prisma.StockMovementWhereInput {
   const q = normalizedQuery(filters.q);
   const type = normalizedMovementType(filters.type);
-  const from = filters.from?.trim() ? parseKoreaDateStart(filters.from, "from") : undefined;
-  const to = filters.to?.trim() ? parseKoreaDateStart(filters.to, "to") : undefined;
-
-  if (from && to && from.getTime() > to.getTime()) {
-    throw new Error("EXPORT_FILTER_DATE_RANGE_INVALID");
-  }
+  const warehouse = normalizedWarehouse(filters.warehouse);
+  const createdAt = koreaCreatedAtRange(filters);
 
   return {
     ...(q
@@ -185,13 +235,39 @@ export function buildMovementWhere(
         }
       : {}),
     ...(type ? { type } : {}),
-    ...(from || to
+    ...(warehouse
       ? {
-          createdAt: {
-            ...(from ? { gte: from } : {}),
-            ...(to ? { lt: new Date(to.getTime() + DAY_MS) } : {})
-          }
+          AND: [{
+            OR: [
+              { warehouse },
+              { destinationWarehouse: warehouse }
+            ]
+          }]
         }
-      : {})
+      : {}),
+    ...(createdAt ? { createdAt } : {})
+  };
+}
+
+export function buildOrderWhere(
+  filters: OrderQueryFilters = {}
+): Prisma.OrderWhereInput {
+  const q = normalizedQuery(filters.q);
+  const createdAt = koreaCreatedAtRange(filters);
+
+  return {
+    ...(q
+      ? {
+          OR: [
+            { orderNo: { contains: q, mode: "insensitive" as const } },
+            { memo: { contains: q, mode: "insensitive" as const } },
+            { client: { is: { name: { contains: q, mode: "insensitive" as const } } } },
+            { client: { is: { managerName: { contains: q, mode: "insensitive" as const } } } },
+            { items: { some: { allergen: { is: { name: { contains: q, mode: "insensitive" as const } } } } } },
+            { items: { some: { allergen: { is: { code: { contains: q, mode: "insensitive" as const } } } } } }
+          ]
+        }
+      : {}),
+    ...(createdAt ? { createdAt } : {})
   };
 }

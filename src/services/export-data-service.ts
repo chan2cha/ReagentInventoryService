@@ -1,12 +1,15 @@
 import "server-only";
 
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { OrderStatus, Prisma, PrismaClient } from "@prisma/client";
 import {
-  buildLotWhere,
   buildMovementWhere,
+  buildOrderWhere,
+  buildWarehouseStockWhere,
   normalizedLotStatus,
+  normalizedWarehouse,
   type LotQueryFilters,
-  type MovementQueryFilters
+  type MovementQueryFilters,
+  type OrderQueryFilters
 } from "../domain/export-filters";
 import {
   lotStatusFromSnapshot,
@@ -20,6 +23,7 @@ import {
   type StockMovementKind,
   type StockMovementLabel
 } from "../domain/stock-movement-presentation";
+import type { WarehouseKind } from "../domain/warehouse";
 import {
   listStatusFilteredLots,
   type StatusFilteredLotRecord
@@ -30,7 +34,7 @@ export const EXPORT_QUERY_TAKE = EXPORT_ROW_LIMIT + 1;
 
 export type ExportDatabaseClient = PrismaClient | Prisma.TransactionClient;
 
-export type ExportDataset = "lots" | "movements";
+export type ExportDataset = "lots" | "movements" | "orders";
 export type LotExportStatus = LotStatusLabel;
 
 export type LotExportRow = {
@@ -40,6 +44,7 @@ export type LotExportRow = {
   lotNo: string;
   receivedDate: Date;
   expirationDate: Date;
+  warehouse: WarehouseKind;
   initialQuantity: number;
   currentQuantity: number;
   minStock: number;
@@ -58,11 +63,28 @@ export type MovementExportRow = {
   allergenName: string;
   lotNo: string;
   expirationDate: Date;
+  warehouse: WarehouseKind;
+  destinationWarehouse: WarehouseKind | null;
   reason: string | null;
   refType: string | null;
   orderNo: string | null;
   clientName: string | null;
   actorName: string;
+};
+
+export type OrderExportRow = {
+  orderId: string;
+  createdAt: Date;
+  orderNo: string;
+  status: "접수" | "준비중" | "출고완료" | "취소";
+  clientName: string;
+  clientManager: string | null;
+  allergenCode: string;
+  allergenName: string;
+  quantity: number;
+  memo: string | null;
+  hasImage: boolean;
+  creatorName: string;
 };
 
 export type LotExportOptions = LotQueryFilters & {
@@ -82,29 +104,36 @@ export class ExportRowLimitExceededError extends Error {
 }
 
 const lotExportSelect = {
-  id: true,
-  lotNo: true,
-  receivedDate: true,
-  expirationDate: true,
-  initialQuantity: true,
-  currentQuantity: true,
-  memo: true,
-  isActive: true,
-  allergen: {
+  warehouse: true,
+  quantity: true,
+  reagentLot: {
     select: {
-      code: true,
-      name: true,
-      category: true,
-      minStock: true
+      id: true,
+      lotNo: true,
+      receivedDate: true,
+      expirationDate: true,
+      initialQuantity: true,
+      memo: true,
+      isActive: true,
+      allergen: {
+        select: {
+          code: true,
+          name: true,
+          category: true,
+          minStock: true
+        }
+      }
     }
   }
-} satisfies Prisma.ReagentLotSelect;
+} satisfies Prisma.WarehouseStockSelect;
 
 const movementExportSelect = {
   id: true,
   createdAt: true,
   type: true,
   quantity: true,
+  warehouse: true,
+  destinationWarehouse: true,
   reason: true,
   refType: true,
   refId: true,
@@ -127,20 +156,58 @@ const movementExportSelect = {
   }
 } satisfies Prisma.StockMovementSelect;
 
-type LotExportRecord = Prisma.ReagentLotGetPayload<{ select: typeof lotExportSelect }>;
+const orderExportSelect = {
+  id: true,
+  quantity: true,
+  allergen: {
+    select: {
+      code: true,
+      name: true
+    }
+  },
+  order: {
+    select: {
+      id: true,
+      createdAt: true,
+      orderNo: true,
+      status: true,
+      memo: true,
+      client: {
+        select: {
+          name: true,
+          managerName: true
+        }
+      },
+      creator: {
+        select: {
+          name: true
+        }
+      },
+      image: {
+        select: {
+          id: true
+        }
+      }
+    }
+  }
+} satisfies Prisma.OrderItemSelect;
+
+type LotExportRecord = Prisma.WarehouseStockGetPayload<{ select: typeof lotExportSelect }>;
 type MovementExportRecord = Prisma.StockMovementGetPayload<{ select: typeof movementExportSelect }>;
+type OrderExportRecord = Prisma.OrderItemGetPayload<{ select: typeof orderExportSelect }>;
 
 const lotExportOrder = [
-  { expirationDate: "asc" as const },
-  { lotNo: "asc" as const },
-  { id: "asc" as const }
+  { reagentLot: { expirationDate: "asc" as const } },
+  { reagentLot: { lotNo: "asc" as const } },
+  { warehouse: "asc" as const },
+  { reagentLotId: "asc" as const }
 ];
 
 function lotStatusSnapshot(lot: LotExportRecord) {
   return {
-    currentQuantity: lot.currentQuantity,
-    expirationDate: lot.expirationDate,
-    minStock: lot.allergen.minStock
+    currentQuantity: lot.quantity,
+    expirationDate: lot.reagentLot.expirationDate,
+    minStock: lot.reagentLot.allergen.minStock
   };
 }
 
@@ -169,12 +236,14 @@ export async function listLotExportRows(
 ): Promise<LotExportRow[]> {
   const { now = new Date(), ...filters } = options;
   const status = normalizedLotStatus(filters.status);
-  const where = buildLotWhere(filters, now);
+  const warehouse = normalizedWarehouse(filters.warehouse);
+  const where = buildWarehouseStockWhere(filters, now);
   if (status && lotStatusRequiresCrossModelComparison(status)) {
     const records = await listStatusFilteredLots(db, {
       q: filters.q,
       status,
       now,
+      warehouse,
       take: EXPORT_QUERY_TAKE
     });
     assertWithinExportLimit("lots", records.length);
@@ -182,7 +251,7 @@ export async function listLotExportRows(
     return records.map((record) => statusFilteredRecordToExportRow(record, now));
   }
 
-  const lots = await db.reagentLot.findMany({
+  const lots = await db.warehouseStock.findMany({
         where,
         select: lotExportSelect,
         orderBy: lotExportOrder,
@@ -192,18 +261,19 @@ export async function listLotExportRows(
   assertWithinExportLimit("lots", lots.length);
 
   return lots.map((lot) => ({
-    allergenCode: lot.allergen.code,
-    allergenName: lot.allergen.name,
-    category: lot.allergen.category,
-    lotNo: lot.lotNo,
-    receivedDate: lot.receivedDate,
-    expirationDate: lot.expirationDate,
-    initialQuantity: lot.initialQuantity,
-    currentQuantity: lot.currentQuantity,
-    minStock: lot.allergen.minStock,
+    allergenCode: lot.reagentLot.allergen.code,
+    allergenName: lot.reagentLot.allergen.name,
+    category: lot.reagentLot.allergen.category,
+    lotNo: lot.reagentLot.lotNo,
+    receivedDate: lot.reagentLot.receivedDate,
+    expirationDate: lot.reagentLot.expirationDate,
+    warehouse: lot.warehouse,
+    initialQuantity: lot.reagentLot.initialQuantity,
+    currentQuantity: lot.quantity,
+    minStock: lot.reagentLot.allergen.minStock,
     status: lotStatusFromSnapshot(lotStatusSnapshot(lot), now),
-    isActive: lot.isActive,
-    memo: lot.memo
+    isActive: lot.reagentLot.isActive,
+    memo: lot.reagentLot.memo
   }));
 }
 
@@ -218,6 +288,7 @@ function statusFilteredRecordToExportRow(
     lotNo: record.lotNo,
     receivedDate: record.receivedDate,
     expirationDate: record.expirationDate,
+    warehouse: record.warehouse,
     initialQuantity: record.initialQuantity,
     currentQuantity: record.currentQuantity,
     minStock: record.minStock,
@@ -285,6 +356,8 @@ export async function listMovementExportRows(
       allergenName: movement.reagentLot.allergen.name,
       lotNo: movement.reagentLot.lotNo,
       expirationDate: movement.reagentLot.expirationDate,
+      warehouse: movement.warehouse,
+      destinationWarehouse: movement.destinationWarehouse,
       reason: movement.reason,
       refType: movement.refType,
       orderNo: shipment?.order.orderNo ?? null,
@@ -292,4 +365,52 @@ export async function listMovementExportRows(
       actorName: movement.creator.name
     };
   });
+}
+
+function orderStatusLabel(status: OrderStatus): OrderExportRow["status"] {
+  const labels = {
+    RECEIVED: "접수",
+    READY_TO_SHIP: "준비중",
+    SHIPPED: "출고완료",
+    CANCELLED: "취소"
+  } satisfies Record<OrderStatus, OrderExportRow["status"]>;
+
+  return labels[status];
+}
+
+export async function listOrderExportRows(
+  db: ExportDatabaseClient,
+  filters: OrderQueryFilters = {}
+): Promise<OrderExportRow[]> {
+  const items: OrderExportRecord[] = await db.orderItem.findMany({
+    where: {
+      order: {
+        is: buildOrderWhere(filters)
+      }
+    },
+    select: orderExportSelect,
+    orderBy: [
+      { order: { createdAt: "desc" } },
+      { order: { id: "desc" } },
+      { id: "asc" }
+    ],
+    take: EXPORT_QUERY_TAKE
+  });
+
+  assertWithinExportLimit("orders", items.length);
+
+  return items.map((item) => ({
+    orderId: item.order.id,
+    createdAt: item.order.createdAt,
+    orderNo: item.order.orderNo,
+    status: orderStatusLabel(item.order.status),
+    clientName: item.order.client.name,
+    clientManager: item.order.client.managerName,
+    allergenCode: item.allergen.code,
+    allergenName: item.allergen.name,
+    quantity: item.quantity,
+    memo: item.order.memo,
+    hasImage: Boolean(item.order.image),
+    creatorName: item.order.creator.name
+  }));
 }

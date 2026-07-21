@@ -5,6 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { normalizeOrderItems } from "@/domain/order-items";
+import { parseOrderImageUploads } from "@/domain/order-image";
 import { requireRole } from "@/lib/auth";
 import { redirectWithFlash } from "@/lib/flash-message";
 import { formString, formStrings } from "@/lib/form-data";
@@ -20,6 +21,7 @@ export async function createOrder(formData: FormData) {
   const memo = formString(formData, "memo");
   const allergenIds = formStrings(formData, "allergenId");
   const quantities = formStrings(formData, "quantity");
+  const imageValues = formData.getAll("image");
 
   if (!clientId) {
     await fail("거래처를 선택하세요.");
@@ -52,11 +54,13 @@ export async function createOrder(formData: FormData) {
 
   try {
     const user = await requireRole(["ADMIN", "ORDER_MANAGER"]);
+    const image = await parseOrderImageUploads(imageValues);
     await createOrderValue(prisma, {
       clientId,
       memo: memo || null,
       items,
-      actorId: user.id
+      actorId: user.id,
+      ...(image ? { image } : {})
     });
   } catch (error) {
     unstable_rethrow(error);
@@ -79,6 +83,26 @@ export async function createOrder(formData: FormData) {
 
     if (error instanceof Error && error.message === "ORDER_DAILY_LIMIT_REACHED") {
       await fail("오늘 등록 가능한 주문번호 999건을 모두 사용했습니다. 관리자에게 문의하세요.");
+    }
+
+    if (error instanceof Error && error.message === "ORDER_IMAGE_SIZE_INVALID") {
+      await fail("주문 이미지는 3MB 이하의 파일만 첨부할 수 있습니다.");
+    }
+
+    if (
+      error instanceof Error &&
+      [
+        "ORDER_IMAGE_FILE_INVALID",
+        "ORDER_IMAGE_MULTIPLE_FILES",
+        "ORDER_IMAGE_TYPE_INVALID",
+        "ORDER_IMAGE_SIGNATURE_INVALID"
+      ].includes(error.message)
+    ) {
+      await fail("주문 이미지는 실제 JPG, PNG 또는 WebP 파일만 첨부할 수 있습니다.");
+    }
+
+    if (error instanceof Error && error.message === "ORDER_IMAGE_NAME_INVALID") {
+      await fail("주문 이미지 파일명이 올바르지 않거나 너무 깁니다.");
     }
 
     await fail("주문 저장 중 오류가 발생했습니다. 연결 상태를 확인하세요.");

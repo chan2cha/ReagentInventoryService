@@ -3,6 +3,7 @@
 import { Boxes, History } from "lucide-react";
 import { useState } from "react";
 import { LOT_STATUS_KINDS, lotStatusLabel } from "@/domain/lot-status";
+import { WAREHOUSE_KINDS, warehouseLabel } from "@/domain/warehouse";
 import { ExportDownloadButton } from "./export-download-button";
 
 const movementTypes = [
@@ -10,7 +11,8 @@ const movementTypes = [
   { label: "출고", value: "OUT" },
   { label: "조정", value: "ADJUST" },
   { label: "폐기", value: "DISPOSE" },
-  { label: "출고취소/복구", value: "REVERSE" }
+  { label: "출고취소/복구", value: "REVERSE" },
+  { label: "창고이동", value: "TRANSFER" }
 ] as const;
 
 const inventoryStatuses = LOT_STATUS_KINDS.map((status) => ({
@@ -21,10 +23,12 @@ const inventoryStatuses = LOT_STATUS_KINDS.map((status) => ({
 export function ExportCenter() {
   const [inventoryQ, setInventoryQ] = useState("");
   const [inventoryStatus, setInventoryStatus] = useState("");
+  const [inventoryWarehouse, setInventoryWarehouse] = useState("");
   const [movementQ, setMovementQ] = useState("");
   const [movementFrom, setMovementFrom] = useState("");
   const [movementTo, setMovementTo] = useState("");
   const [movementType, setMovementType] = useState("");
+  const [movementWarehouse, setMovementWarehouse] = useState("");
   const [includeInventory, setIncludeInventory] = useState(true);
   const [includeMovements, setIncludeMovements] = useState(true);
   const hasInvalidDateRange = Boolean(movementFrom && movementTo && movementFrom > movementTo);
@@ -89,6 +93,19 @@ export function ExportCenter() {
                 ))}
               </select>
             </label>
+            <label className="wide" htmlFor="inventory-export-warehouse">
+              창고
+              <select
+                id="inventory-export-warehouse"
+                onChange={(event) => setInventoryWarehouse(event.target.value)}
+                value={inventoryWarehouse}
+              >
+                <option value="">전체 창고</option>
+                {WAREHOUSE_KINDS.map((warehouse) => (
+                  <option key={warehouse} value={warehouse}>{warehouseLabel(warehouse)}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <footer>
@@ -96,7 +113,12 @@ export function ExportCenter() {
             <ExportDownloadButton
               fallbackFileName="재고-현황.xlsx"
               label="재고 현황 개별 엑셀"
-              query={{ report: "inventory", q: inventoryQ, status: inventoryStatus }}
+              query={{
+                report: "inventory",
+                q: inventoryQ,
+                status: inventoryStatus,
+                warehouse: inventoryWarehouse
+              }}
             />
           </footer>
         </article>
@@ -165,6 +187,19 @@ export function ExportCenter() {
                 ))}
               </select>
             </label>
+            <label className="wide" htmlFor="movement-export-warehouse">
+              창고
+              <select
+                id="movement-export-warehouse"
+                onChange={(event) => setMovementWarehouse(event.target.value)}
+                value={movementWarehouse}
+              >
+                <option value="">전체 창고</option>
+                {WAREHOUSE_KINDS.map((warehouse) => (
+                  <option key={warehouse} value={warehouse}>{warehouseLabel(warehouse)}</option>
+                ))}
+              </select>
+            </label>
             {hasInvalidDateRange ? (
               <p className="export-filter-error" role="alert">종료일은 시작일과 같거나 이후여야 합니다.</p>
             ) : null}
@@ -181,7 +216,8 @@ export function ExportCenter() {
                 q: movementQ,
                 from: movementFrom,
                 to: movementTo,
-                type: movementType
+                type: movementType,
+                warehouse: movementWarehouse
               }}
             />
           </footer>
@@ -209,10 +245,12 @@ export function ExportCenter() {
             datasets: selectedDatasets.join(","),
             inventoryQ: includeInventory ? inventoryQ : undefined,
             inventoryStatus: includeInventory ? inventoryStatus : undefined,
+            inventoryWarehouse: includeInventory ? inventoryWarehouse : undefined,
             movementQ: includeMovements ? movementQ : undefined,
             from: includeMovements ? movementFrom : undefined,
             to: includeMovements ? movementTo : undefined,
-            type: includeMovements ? movementType : undefined
+            type: includeMovements ? movementType : undefined,
+            movementWarehouse: includeMovements ? movementWarehouse : undefined
           }}
         />
       </section>

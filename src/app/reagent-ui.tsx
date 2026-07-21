@@ -9,7 +9,6 @@ import {
   Gauge,
   History,
   KeyRound,
-  Layers,
   PackageCheck,
   PackagePlus,
   ScrollText,
@@ -47,7 +46,7 @@ type ShellProps = {
   children: React.ReactNode;
 };
 
-type AppRoute = "/" | "/lots" | "/receiving" | "/orders" | "/orders/templates" | "/shipments" | "/replacements" | "/clients" | "/allergens" | "/movements" | "/exports" | "/audit" | "/users" | "/account/password" | "/access-denied";
+type AppRoute = "/" | "/lots" | "/receiving" | "/orders" | "/shipments" | "/replacements" | "/clients" | "/allergens" | "/movements" | "/exports" | "/audit" | "/users" | "/account/password" | "/access-denied";
 type ActionRoute = AppRoute | "/orders/new";
 
 type NavItem = { href: AppRoute; label: string; icon: LucideIcon; capability?: Capability };
@@ -71,7 +70,6 @@ const navGroups: NavGroup[] = [
     label: "주문·출고",
     items: [
       { href: "/orders", label: "주문 관리", icon: ClipboardList },
-      { href: "/orders/templates", label: "주문 세트", icon: Layers, capability: "ORDER_TEMPLATE_WRITE" },
       { href: "/shipments", label: "출고 처리", icon: PackageCheck },
       { href: "/replacements", label: "선제 교환", icon: RefreshCw, capability: "SHIPMENT_WRITE" }
     ]
@@ -242,7 +240,8 @@ export function StatusBadge({ status }: { status: LotStatus | OrderStatus | Stoc
     출고: "ok",
     조정: "warn",
     폐기: "danger",
-    "출고취소/복구": "muted"
+    "출고취소/복구": "muted",
+    창고이동: "info"
   }[status];
 
   const label = status === "품절" ? "재고 없음" : status;

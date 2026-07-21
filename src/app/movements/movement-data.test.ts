@@ -25,6 +25,8 @@ describe("getMovementRows movement-type filtering", () => {
       createdAt: new Date("2026-07-13T01:30:00.000Z"),
       type: "OUT",
       quantity: 3,
+      warehouse: "FINISHED_GOODS",
+      destinationWarehouse: null,
       reason: "ORD-001",
       reagentLot: {
         lotNo: "LOT-001",
@@ -37,10 +39,16 @@ describe("getMovementRows movement-type filtering", () => {
   });
 
   it("applies one shared search and type predicate to count and row queries", async () => {
-    const result = await getMovementRows(1, " EGG ", "OUT");
+    const result = await getMovementRows(1, " EGG ", "OUT", "FINISHED_GOODS");
     const expectedWhere = expect.objectContaining({
       type: "OUT",
-      OR: expect.any(Array)
+      OR: expect.any(Array),
+      AND: [{
+        OR: [
+          { warehouse: "FINISHED_GOODS" },
+          { destinationWarehouse: "FINISHED_GOODS" }
+        ]
+      }]
     });
 
     expect(mocks.count).toHaveBeenCalledWith({ where: expectedWhere });
@@ -55,7 +63,34 @@ describe("getMovementRows movement-type filtering", () => {
       id: "movement-1",
       type: "출고",
       allergenCode: "EGG-01",
-      lotNo: "LOT-001"
+      lotNo: "LOT-001",
+      warehouse: "완제품",
+      destinationWarehouse: null
     })]);
+  });
+
+  it("presents both warehouses for a transfer movement", async () => {
+    mocks.findMany.mockResolvedValue([{
+      id: "movement-transfer",
+      createdAt: new Date("2026-07-13T02:30:00.000Z"),
+      type: "TRANSFER",
+      quantity: 2,
+      warehouse: "FINISHED_GOODS",
+      destinationWarehouse: "SAMPLE",
+      reason: "검체 보관",
+      reagentLot: {
+        lotNo: "LOT-001",
+        allergen: { name: "난백", code: "EGG-01" }
+      }
+    }]);
+
+    const result = await getMovementRows(1);
+
+    expect(result.rows[0]).toMatchObject({
+      type: "창고이동",
+      warehouse: "완제품",
+      destinationWarehouse: "검체",
+      quantity: 2
+    });
   });
 });

@@ -13,7 +13,8 @@ describe("stock movement presentation", () => {
       ["OUT", "출고"],
       ["ADJUST", "조정"],
       ["DISPOSE", "폐기"],
-      ["REVERSE", "출고취소/복구"]
+      ["REVERSE", "출고취소/복구"],
+      ["TRANSFER", "창고이동"]
     ]);
   });
 
@@ -27,10 +28,12 @@ describe("stock movement presentation", () => {
     expect(stockMovementDelta("ADJUST", 5)).toBe(5);
     expect(stockMovementDelta("ADJUST", -5)).toBe(-5);
     expect(stockMovementDelta("DISPOSE", -5)).toBe(-5);
+    expect(stockMovementDelta("TRANSFER", 5)).toBe(0);
   });
 
   it("recognizes only supported movement kinds", () => {
     expect(isStockMovementKind("REVERSE")).toBe(true);
+    expect(isStockMovementKind("TRANSFER")).toBe(true);
     expect(isStockMovementKind("reverse")).toBe(false);
     expect(isStockMovementKind("")).toBe(false);
   });

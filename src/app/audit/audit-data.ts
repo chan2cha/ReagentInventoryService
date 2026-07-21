@@ -6,12 +6,14 @@ const actionLabels: Record<string, string> = {
   ORDER_CANCEL: "주문 취소",
   SHIPMENT_CREATE: "출고 처리",
   SHIPMENT_CANCEL: "출고 취소",
+  STOCK_TRANSFER: "창고 간 재고이동",
   USER_ACTIVATE: "사용자 활성화",
   USER_DEACTIVATE: "사용자 비활성화",
   USER_PASSWORD_RESET: "비밀번호 재설정",
   USER_CREATE: "사용자 등록",
   INVENTORY_EXPORT: "재고현황 엑셀 생성",
   MOVEMENT_EXPORT: "입출고이력 엑셀 생성",
+  ORDER_EXPORT: "주문내역 엑셀 생성",
   COMBINED_EXPORT: "업무자료 통합 엑셀 생성"
 };
 

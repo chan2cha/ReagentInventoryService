@@ -78,20 +78,21 @@ function mapOrderStatus(status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANC
   return map[status];
 }
 
-function mapMovementType(type: "IN" | "OUT" | "ADJUST" | "DISPOSE" | "REVERSE"): MovementType {
+function mapMovementType(type: "IN" | "OUT" | "ADJUST" | "DISPOSE" | "REVERSE" | "TRANSFER"): MovementType {
   const map = {
     IN: "입고",
     OUT: "출고",
     ADJUST: "조정",
     DISPOSE: "폐기",
-    REVERSE: "조정"
+    REVERSE: "조정",
+    TRANSFER: "창고이동"
   } satisfies Record<typeof type, MovementType>;
 
   return map[type];
 }
 
 function statusFromDbLot(lot: {
-  currentQuantity: number;
+  quantity: number;
   expirationDate: Date;
   allergen: {
     minStock: number;
@@ -100,9 +101,9 @@ function statusFromDbLot(lot: {
   const days = daysUntilDateOnly(lot.expirationDate);
 
   if (days < 0) return "유통기한 만료";
-  if (lot.currentQuantity === 0) return "품절";
+  if (lot.quantity === 0) return "품절";
   if (days <= 30) return "유통기한 임박";
-  if (lot.allergen.minStock > 0 && lot.currentQuantity < lot.allergen.minStock) return "재고부족";
+  if (lot.allergen.minStock > 0 && lot.quantity < lot.allergen.minStock) return "재고부족";
   return "정상";
 }
 
@@ -162,8 +163,8 @@ export async function getDashboardData(): Promise<DashboardData> {
       pendingShipments,
       todayShipments,
       expiringLots,
-      stockPolicyLots,
-      priorityLots,
+      stockPolicyStocks,
+      priorityStocks,
       orderSummary,
       recentMovements,
       replacementCandidateCount,
@@ -183,40 +184,37 @@ export async function getDashboardData(): Promise<DashboardData> {
           shippedAt: today
         }
       }),
-      prisma.reagentLot.count({
+      prisma.warehouseStock.count({
         where: {
-          expirationDate: {
-            gte: expiringFrom,
-            lt: expiringTo
-          },
-          isActive: true
+          warehouse: "FINISHED_GOODS",
+          quantity: { gt: 0 },
+          reagentLot: { is: {
+            expirationDate: { gte: expiringFrom, lt: expiringTo },
+            isActive: true
+          } }
         }
       }),
-      prisma.reagentLot.findMany({
+      prisma.warehouseStock.findMany({
         where: {
-          allergen: {
-            minStock: {
-              gt: 0
-            }
-          },
-          isActive: true
+          warehouse: "FINISHED_GOODS",
+          reagentLot: { is: {
+            allergen: { is: { minStock: { gt: 0 } } },
+            isActive: true
+          } }
         },
         select: {
-          currentQuantity: true,
-          allergen: {
-            select: {
-              minStock: true
-            }
-          }
+          quantity: true,
+          reagentLot: { select: { allergen: { select: { minStock: true } } } }
         }
       }),
-      prisma.reagentLot.findMany({
+      prisma.warehouseStock.findMany({
+        where: { warehouse: "FINISHED_GOODS" },
         include: {
-          allergen: true
+          reagentLot: { include: { allergen: true } }
         },
         orderBy: [
-          { expirationDate: "asc" },
-          { lotNo: "asc" }
+          { reagentLot: { expirationDate: "asc" } },
+          { reagentLot: { lotNo: "asc" } }
         ],
         take: 6
       }),
@@ -259,15 +257,21 @@ export async function getDashboardData(): Promise<DashboardData> {
         pendingShipments,
         todayShipments,
         expiringLots,
-        lowLots: stockPolicyLots.filter((lot) => lot.currentQuantity < lot.allergen.minStock).length
+        lowLots: stockPolicyStocks.filter((stock) => (
+          stock.quantity < stock.reagentLot.allergen.minStock
+        )).length
       },
-      priorityLots: priorityLots.map((lot) => ({
-        id: lot.id,
-        allergenName: lot.allergen.name,
-        lotNo: lot.lotNo,
-        expirationDate: lot.expirationDate.toISOString().slice(0, 10),
-        quantity: lot.currentQuantity,
-        status: statusFromDbLot(lot),
+      priorityLots: priorityStocks.map((stock) => ({
+        id: `${stock.reagentLotId}:${stock.warehouse}`,
+        allergenName: stock.reagentLot.allergen.name,
+        lotNo: stock.reagentLot.lotNo,
+        expirationDate: stock.reagentLot.expirationDate.toISOString().slice(0, 10),
+        quantity: stock.quantity,
+        status: statusFromDbLot({
+          quantity: stock.quantity,
+          expirationDate: stock.reagentLot.expirationDate,
+          allergen: stock.reagentLot.allergen
+        }),
         source: "database"
       })),
       orderSummary: orderSummary.map((order) => ({

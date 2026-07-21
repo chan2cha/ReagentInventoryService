@@ -357,7 +357,6 @@ async function main() {
       update: {
         receivedDate: date(seed.receivedDate),
         initialQuantity: seed.initialQuantity,
-        currentQuantity: seed.currentQuantity,
         isActive: true
       },
       create: {
@@ -366,8 +365,22 @@ async function main() {
         receivedDate: date(seed.receivedDate),
         expirationDate: date(seed.expirationDate),
         initialQuantity: seed.initialQuantity,
-        currentQuantity: seed.currentQuantity,
         isActive: true
+      }
+    });
+
+    await prisma.warehouseStock.upsert({
+      where: {
+        reagentLotId_warehouse: {
+          reagentLotId: lot.id,
+          warehouse: "FINISHED_GOODS"
+        }
+      },
+      update: { quantity: seed.currentQuantity },
+      create: {
+        reagentLotId: lot.id,
+        warehouse: "FINISHED_GOODS",
+        quantity: seed.currentQuantity
       }
     });
 
@@ -483,6 +496,7 @@ async function main() {
       reagentLotId: lot.id,
       type: seed.type,
       quantity: seed.quantity,
+      warehouse: "FINISHED_GOODS",
       reason: seed.reason,
       refType: "SAMPLE_SEED",
       refId: movementRefId,

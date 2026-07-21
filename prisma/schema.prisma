@@ -50,6 +50,15 @@ enum StockMovementType {
   ADJUST
   DISPOSE
   REVERSE
+  TRANSFER
+}
+
+enum Warehouse {
+  FINISHED_GOODS
+  SAMPLE
+  RETURNED
+  NONCONFORMING
+  DISPOSAL
 }
 
 model User {
@@ -68,8 +77,6 @@ model User {
   shipments             Shipment[]      @relation("ShipmentShippedBy")
   stockMovements        StockMovement[]
   auditLogs             AuditLog[]
-  orderTemplatesCreated OrderTemplate[] @relation("OrderTemplateCreatedBy")
-  orderTemplatesUpdated OrderTemplate[] @relation("OrderTemplateUpdatedBy")
   replacementsCreated   Replacement[]   @relation("ReplacementCreatedBy")
   replacementsCompleted Replacement[]   @relation("ReplacementCompletedBy")
 }
@@ -90,41 +97,51 @@ model AuditLog {
 }
 
 model Allergen {
-  id                 String              @id @default(cuid())
-  code               String              @unique
-  name               String
-  category           String?
-  minStock           Int                 @default(0)
-  isActive           Boolean             @default(true)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  lots               ReagentLot[]
-  orderItems         OrderItem[]
-  orderTemplateItems OrderTemplateItem[]
+  id         String       @id @default(cuid())
+  code       String       @unique
+  name       String
+  category   String?
+  minStock   Int          @default(0)
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  lots       ReagentLot[]
+  orderItems OrderItem[]
 
   @@index([name])
 }
 
 model ReagentLot {
-  id              String          @id @default(cuid())
+  id              String           @id @default(cuid())
   allergenId      String
   lotNo           String
   expirationDate  DateTime
   receivedDate    DateTime
   initialQuantity Int
-  currentQuantity Int
   memo            String?
-  isActive        Boolean         @default(true)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  allergen        Allergen        @relation(fields: [allergenId], references: [id])
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  allergen        Allergen         @relation(fields: [allergenId], references: [id])
   shipmentItems   ShipmentItem[]
   stockMovements  StockMovement[]
+  warehouseStocks WarehouseStock[]
 
   @@unique([allergenId, lotNo, expirationDate])
   @@index([lotNo])
   @@index([expirationDate])
-  @@index([currentQuantity])
+}
+
+model WarehouseStock {
+  reagentLotId String
+  warehouse    Warehouse
+  quantity     Int
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  reagentLot   ReagentLot @relation(fields: [reagentLotId], references: [id], onDelete: Cascade)
+
+  @@id([reagentLotId, warehouse])
+  @@index([warehouse, quantity])
 }
 
 model Client {
@@ -153,10 +170,22 @@ model Order {
   creator   User        @relation("OrderCreatedBy", fields: [createdBy], references: [id])
   items     OrderItem[]
   shipments Shipment[]
+  image     OrderImage?
 
   @@index([clientId])
   @@index([status])
   @@index([createdAt])
+}
+
+model OrderImage {
+  id          String   @id @default(cuid())
+  orderId     String   @unique
+  fileName    String
+  contentType String
+  byteSize    Int
+  data        Bytes
+  createdAt   DateTime @default(now())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model OrderItem {
@@ -171,66 +200,31 @@ model OrderItem {
   @@index([allergenId])
 }
 
-model OrderTemplate {
-  id          String              @id @default(cuid())
-  name        String
-  nameKey     String              @unique
-  description String?
-  isActive    Boolean             @default(true)
-  sortOrder   Int                 @default(0)
-  version     Int                 @default(1)
-  createdBy   String
-  updatedBy   String
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-  creator     User                @relation("OrderTemplateCreatedBy", fields: [createdBy], references: [id])
-  updater     User                @relation("OrderTemplateUpdatedBy", fields: [updatedBy], references: [id])
-  items       OrderTemplateItem[]
-
-  @@index([isActive, sortOrder, name])
-  @@index([createdBy])
-  @@index([updatedBy])
-}
-
-model OrderTemplateItem {
-  id         String        @id @default(cuid())
-  templateId String
-  allergenId String
-  quantity   Int
-  position   Int
-  template   OrderTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  allergen   Allergen      @relation(fields: [allergenId], references: [id], onDelete: Restrict)
-
-  @@unique([templateId, allergenId])
-  @@unique([templateId, position])
-  @@index([allergenId])
-}
-
 model Shipment {
-  id        String         @id @default(cuid())
-  orderId   String
-  status    ShipmentStatus @default(SHIPPED)
-  purpose   ShipmentPurpose @default(ORDER)
-  shippedBy String
-  shippedAt DateTime       @default(now())
-  memo      String?
-  order     Order          @relation(fields: [orderId], references: [id])
-  shipper   User           @relation("ShipmentShippedBy", fields: [shippedBy], references: [id])
-  items     ShipmentItem[]
-  replacement Replacement? @relation("ReplacementShipment")
+  id          String          @id @default(cuid())
+  orderId     String
+  status      ShipmentStatus  @default(SHIPPED)
+  purpose     ShipmentPurpose @default(ORDER)
+  shippedBy   String
+  shippedAt   DateTime        @default(now())
+  memo        String?
+  order       Order           @relation(fields: [orderId], references: [id])
+  shipper     User            @relation("ShipmentShippedBy", fields: [shippedBy], references: [id])
+  items       ShipmentItem[]
+  replacement Replacement?    @relation("ReplacementShipment")
 
   @@index([orderId])
   @@index([shippedAt])
 }
 
 model ShipmentItem {
-  id           String     @id @default(cuid())
+  id           String       @id @default(cuid())
   shipmentId   String
   reagentLotId String
   allergenId   String
   quantity     Int
-  shipment     Shipment   @relation(fields: [shipmentId], references: [id])
-  reagentLot   ReagentLot @relation(fields: [reagentLotId], references: [id])
+  shipment     Shipment     @relation(fields: [shipmentId], references: [id])
+  reagentLot   ReagentLot   @relation(fields: [reagentLotId], references: [id])
   replacement  Replacement? @relation("OriginalShipmentItem")
 
   @@index([shipmentId])
@@ -238,10 +232,10 @@ model ShipmentItem {
 }
 
 model ReplacementPolicy {
-  id                        String   @id
-  detectionDays             Int
-  minimumDeliveryShelfDays  Int
-  updatedAt                 DateTime @updatedAt
+  id                       String   @id
+  detectionDays            Int
+  minimumDeliveryShelfDays Int
+  updatedAt                DateTime @updatedAt
 }
 
 model Replacement {
@@ -269,19 +263,23 @@ model Replacement {
 }
 
 model StockMovement {
-  id           String            @id @default(cuid())
-  reagentLotId String
-  type         StockMovementType
-  quantity     Int
-  reason       String?
-  refType      String?
-  refId        String?
-  createdBy    String
-  createdAt    DateTime          @default(now())
-  reagentLot   ReagentLot        @relation(fields: [reagentLotId], references: [id])
-  creator      User              @relation(fields: [createdBy], references: [id])
+  id                   String            @id @default(cuid())
+  reagentLotId         String
+  type                 StockMovementType
+  quantity             Int
+  warehouse            Warehouse         @default(FINISHED_GOODS)
+  destinationWarehouse Warehouse?
+  reason               String?
+  refType              String?
+  refId                String?
+  createdBy            String
+  createdAt            DateTime          @default(now())
+  reagentLot           ReagentLot        @relation(fields: [reagentLotId], references: [id])
+  creator              User              @relation(fields: [createdBy], references: [id])
 
   @@index([reagentLotId])
   @@index([createdBy])
   @@index([createdAt])
+  @@index([warehouse, createdAt])
+  @@index([destinationWarehouse, createdAt])
 }

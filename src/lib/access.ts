@@ -2,7 +2,6 @@ import type { UserRole } from "@prisma/client";
 
 export type Capability =
   | "ORDER_WRITE"
-  | "ORDER_TEMPLATE_WRITE"
   | "STOCK_WRITE"
   | "SHIPMENT_WRITE"
   | "MASTER_WRITE"
@@ -12,7 +11,6 @@ export type Capability =
 
 const capabilityRoles: Record<Capability, UserRole[]> = {
   ORDER_WRITE: ["ADMIN", "ORDER_MANAGER"],
-  ORDER_TEMPLATE_WRITE: ["ADMIN", "ORDER_MANAGER"],
   STOCK_WRITE: ["ADMIN", "SHIPMENT_MANAGER"],
   SHIPMENT_WRITE: ["ADMIN", "SHIPMENT_MANAGER"],
   MASTER_WRITE: ["ADMIN"],

@@ -12,6 +12,7 @@ import {
 } from "../reagent-data";
 import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
 import type { ItemQuantity } from "../item-quantity-summary";
+import { buildOrderWhere } from "@/domain/export-filters";
 
 export type OrderRow = {
   id: string;
@@ -22,6 +23,10 @@ export type OrderRow = {
   items: string;
   itemDetails: ItemQuantity[];
   memo: string;
+  image: {
+    fileName: string;
+    byteSize: number;
+  } | null;
   status: OrderStatus;
   canCancel: boolean;
   source: "database" | "sample";
@@ -40,6 +45,7 @@ function sampleOrderRows(): OrderRow[] {
       items: orderItemSummary(order),
       itemDetails: order.items.map((item) => ({ code: findAllergen(item.allergenId)?.code ?? "-", quantity: item.quantity })),
       memo: order.memo || "-",
+      image: null,
       status: order.status,
       canCancel: order.status === "접수" || order.status === "준비중",
       source: "sample"
@@ -58,16 +64,14 @@ function mapOrderStatus(status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANC
   return map[status];
 }
 
-export async function getOrderRows(page: number, q = ""): Promise<PaginatedResult<OrderRow>> {
+export async function getOrderRows(
+  page: number,
+  q = "",
+  from = "",
+  to = ""
+): Promise<PaginatedResult<OrderRow>> {
   try {
-    const where = q ? { OR: [
-      { orderNo: { contains: q, mode: "insensitive" as const } },
-      { memo: { contains: q, mode: "insensitive" as const } },
-      { client: { is: { name: { contains: q, mode: "insensitive" as const } } } },
-      { client: { is: { managerName: { contains: q, mode: "insensitive" as const } } } },
-      { items: { some: { allergen: { is: { name: { contains: q, mode: "insensitive" as const } } } } } },
-      { items: { some: { allergen: { is: { code: { contains: q, mode: "insensitive" as const } } } } } }
-    ] } : {};
+    const where = buildOrderWhere({ q, from, to });
     const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
     const orderQuery = {
       where,
@@ -79,6 +83,12 @@ export async function getOrderRows(page: number, q = ""): Promise<PaginatedResul
           },
           orderBy: {
             id: "asc"
+          }
+        },
+        image: {
+          select: {
+            fileName: true,
+            byteSize: true
           }
         }
       },
@@ -106,6 +116,7 @@ export async function getOrderRows(page: number, q = ""): Promise<PaginatedResul
         .join(", "),
       itemDetails: order.items.map((item) => ({ code: item.allergen.code, quantity: item.quantity })),
       memo: order.memo || "-",
+      image: order.image,
       status: mapOrderStatus(order.status),
       canCancel: order.status === "RECEIVED" || order.status === "READY_TO_SHIP",
       source: "database"

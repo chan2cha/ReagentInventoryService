@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
   cancelPendingOrder: vi.fn(),
   adjustLotStockValue: vi.fn(),
-  createOrderTemplate: vi.fn(),
+  transferWarehouseStock: vi.fn(),
   processShipment: vi.fn(),
   reverseShipment: vi.fn()
 }));
@@ -15,27 +15,20 @@ vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 vi.mock("@/services/order-service", () => ({
   cancelPendingOrder: mocks.cancelPendingOrder
 }));
-vi.mock("@/services/order-template-service", () => ({
-  createOrderTemplate: mocks.createOrderTemplate,
-  updateOrderTemplate: vi.fn(),
-  setOrderTemplateActive: vi.fn()
-}));
 vi.mock("@/services/stock-service", () => ({
   adjustLotStockValue: mocks.adjustLotStockValue
+}));
+vi.mock("@/services/warehouse-transfer-service", () => ({
+  transferWarehouseStock: mocks.transferWarehouseStock
 }));
 vi.mock("@/services/shipment-service", () => ({
   processShipment: mocks.processShipment,
   reverseShipment: mocks.reverseShipment
 }));
 
-import { adjustLotStock } from "@/app/lots/actions";
+import { adjustLotStock, transferLotWarehouse } from "@/app/lots/actions";
 import { cancelOrder } from "@/app/orders/actions";
 import { createOrder } from "@/app/orders/new/actions";
-import {
-  createOrderTemplate,
-  setOrderTemplateActive,
-  updateOrderTemplate
-} from "@/app/orders/templates/actions";
 import { createReceivingLot } from "@/app/receiving/actions";
 import { cancelShipment, shipOrder } from "@/app/shipments/actions";
 
@@ -76,18 +69,6 @@ describe("Server Action framework error handling", () => {
       () => cancelOrder(formData({ orderId: "order-1", reason: "test" }))
     ],
     [
-      "order template creation",
-      () => createOrderTemplate(formData({ name: "정기 세트", allergenId: "allergen-1", quantity: "1" }))
-    ],
-    [
-      "order template update with malformed input",
-      () => updateOrderTemplate(formData({}))
-    ],
-    [
-      "order template activation with malformed input",
-      () => setOrderTemplateActive(formData({}))
-    ],
-    [
       "receiving",
       () => createReceivingLot(formData({
         allergenId: "allergen-1",
@@ -102,6 +83,16 @@ describe("Server Action framework error handling", () => {
       () => adjustLotStock(formData({
         lotId: "lot-1",
         operation: "ADD",
+        quantity: "1",
+        reason: "test"
+      }))
+    ],
+    [
+      "warehouse transfer",
+      () => transferLotWarehouse(formData({
+        lotId: "lot-1",
+        sourceWarehouse: "FINISHED_GOODS",
+        destinationWarehouse: "SAMPLE",
         quantity: "1",
         reason: "test"
       }))

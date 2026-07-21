@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findClients: vi.fn(),
-  findAllergens: vi.fn(),
-  listActiveOrderTemplates: vi.fn()
+  findAllergens: vi.fn()
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -17,17 +16,13 @@ vi.mock("@/lib/prisma", () => ({
   }
 }));
 
-vi.mock("@/services/order-template-service", () => ({
-  listActiveOrderTemplates: mocks.listActiveOrderTemplates
-}));
-
 import { getOrderFormData } from "./order-form-data";
 
 describe("getOrderFormData", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.findClients.mockResolvedValue([
-      { id: "client-1", name: "거래처", managerName: "담당자" }
+      { id: "client-1", name: "거래처", managerName: "담당자", phone: "02-1234-5678" }
     ]);
     mocks.findAllergens.mockResolvedValue([
       { id: "allergen-1", code: "A-1", name: "시약", category: "검사" }
@@ -35,55 +30,35 @@ describe("getOrderFormData", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
-  it("maps active templates into the order form DTO", async () => {
-    mocks.listActiveOrderTemplates.mockResolvedValue([
-      {
-        id: "template-1",
-        name: "기본 세트",
-        description: "설명",
-        items: [
-          {
-            allergenId: "allergen-1",
-            quantity: 2,
-            allergen: { id: "allergen-1", code: "A-1", name: "시약", isActive: true }
-          }
-        ]
-      }
-    ]);
-
+  it("maps active clients and reagents into the order form DTO", async () => {
     await expect(getOrderFormData()).resolves.toEqual({
-      clients: [{ id: "client-1", name: "거래처", manager: "담당자" }],
-      allergens: [{ id: "allergen-1", code: "A-1", name: "시약" }],
-      templates: [
-        {
-          id: "template-1",
-          name: "기본 세트",
-          description: "설명",
-          items: [
-            {
-              allergenId: "allergen-1",
-              quantity: 2,
-              allergen: { id: "allergen-1", code: "A-1", name: "시약", isActive: true }
-            }
-          ]
-        }
-      ],
-      templateLoadFailed: false
+      clients: [{ id: "client-1", name: "거래처", manager: "담당자", phone: "02-1234-5678" }],
+      allergens: [{ id: "allergen-1", code: "A-1", name: "시약" }]
+    });
+
+    expect(mocks.findClients).toHaveBeenCalledWith({
+      where: { isActive: true },
+      orderBy: { name: "asc" }
+    });
+    expect(mocks.findAllergens).toHaveBeenCalledWith({
+      where: { isActive: true },
+      orderBy: [{ category: "asc" }, { code: "asc" }]
     });
   });
 
-  it("keeps manual ordering available when only the template query fails", async () => {
+  it("uses the standard data-source fallback when form data cannot be loaded", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("ALLOW_SAMPLE_DATA", "true");
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    mocks.listActiveOrderTemplates.mockRejectedValue(new Error("template table unavailable"));
+    mocks.findClients.mockRejectedValue(new Error("database unavailable"));
 
     await expect(getOrderFormData()).resolves.toEqual({
-      clients: [{ id: "client-1", name: "거래처", manager: "담당자" }],
-      allergens: [{ id: "allergen-1", code: "A-1", name: "시약" }],
-      templates: [],
-      templateLoadFailed: true
+      clients: [],
+      allergens: []
     });
   });
 });

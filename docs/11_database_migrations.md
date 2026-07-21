@@ -46,12 +46,12 @@ Do not run `migrate resolve --applied` on a new empty database. A new database m
 1. Create or verify a database backup.
 2. Configure runtime `DATABASE_URL` with the transaction pooler and `DIRECT_URL` with the session pooler.
 3. Run `npm run prisma:migrate:status`.
-4. If the P0 invariant migration is pending, run its preflight queries below before the maintenance window.
-5. Resolve every reported violation and take another backup before continuing.
+4. Run the preflight for every pending data-transforming migration. If the P0 invariant or warehouse cutover is pending, schedule a write-stopped maintenance window.
+5. Resolve every reported violation, take and verify another backup, then stop application writes before continuing.
 6. Run `npm run prisma:migrate:deploy`.
 7. Run `npm run prisma:generate` during the application build.
 8. Set a unique temporary `SEED_ADMIN_PASSWORD` of at least 12 characters, set `SEED_DATABASE_TARGET` to the verified `host:port/database?schema=...` derived from `DIRECT_URL`, explicitly set `ALLOW_SAMPLE_DATA=true`, then run `npm run prisma:seed` only for a new approved, non-production environment.
-9. Verify login, dashboard reads, and one non-destructive query.
+9. Verify login, dashboard reads, inventory by warehouse, one partial transfer, finished-goods-only shipment eligibility, movement history, and export filters. Reopen writes only after reconciliation succeeds.
 
 ## P0 Inventory Invariant Migration
 
@@ -141,22 +141,27 @@ Use `--rolled-back`, not `--applied`, only after confirming that the constraints
 
 The `Shipment_one_shipped_per_order_key` partial unique index and all CHECK constraints are expressed in SQL because Prisma Schema Language cannot represent them. Do not remove them after `prisma db pull`; preserve the migration as the source of truth for these database-only invariants.
 
-## Reusable Order Set Migration
+## Retired Order Set Migration History
 
-Migration `20260712150000_add_order_templates` adds globally reusable order sets after the P0 invariant migration:
+`20260712150000_add_order_templates` is an immutable historical migration. It created `OrderTemplate` and `OrderTemplateItem`, their constraints and indexes, and actor/reagent foreign keys. The migration was applied to real databases, so it must remain committed unchanged even though the feature is no longer part of the current schema. Deleting or editing it would create migration-history drift; it would not remove tables already present in a database.
 
-- `OrderTemplate` stores the normalized unique name, optional description, active state, display order, optimistic-concurrency `version`, creator/updater, and timestamps.
-- `OrderTemplateItem` stores the ordered reagent references and positive default quantities.
-- There is intentionally no `Client` foreign key; sets are available across all customer orders.
-- Deleting a template cascades to its items, while deleting a referenced reagent is restricted.
-- Database checks enforce non-empty bounded names, bounded descriptions, non-negative sort positions, positive versions, and positive item quantities.
-- Unique indexes prevent a normalized set-name duplicate and prevent the same reagent or position from appearing twice in one set.
+On 2026-07-12, all migrations then present through `20260712150000_add_order_templates` were applied to the isolated `TEST_DATABASE_URL`, migration status was current, and the database integration suite passed.
 
-This migration creates new tables and does not transform or backfill existing order data, so it does not need an additional legacy-data preflight. It still requires the standard backup, status check, maintenance-window deployment, and post-deployment verification. If `20260712000000_enforce_inventory_invariants` is also pending, its preflight remains mandatory because `prisma migrate deploy` applies pending migrations in order.
+The operational database was handled separately: all nine P0 preflight counts were zero, a PostgreSQL custom-format `public` schema backup was created and validated with `pg_restore --list`, and both forward migrations were applied over the verified `:5432` session-pooler connection. Post-deployment migration status was current and the invariant catalog checks passed. The retained local backup is `/Users/chan/Backups/ReagentInventoryService/reagent-operational-pre-migration-20260712T134728Z.dump` with mode `0600` and SHA-256 `71d8d7d77d732b335012b79335c4cd0ca754a4b142f28ac787b0cb5d3e05c508`.
 
-Application services enforce rules that cannot be expressed solely by these foreign keys: every reagent must be active on create, update, and reactivation; update and activation changes compare the submitted `version`; and each successful create, update, activation, or deactivation writes an `AuditLog` record in the same transaction.
+At deployment time the saved local `.env` initially had the pooler ports assigned in reverse (`DATABASE_URL=:5432`, `DIRECT_URL=:6543`). The migration commands used a verified one-process override so no migration ran through the transaction pooler. The values were then corrected to `DATABASE_URL=:6543` and `DIRECT_URL=:5432`; ordinary `prisma:migrate:status` completed over `:5432`, and authenticated read-only checks completed over the normal `:6543` runtime path.
 
-After deployment, confirm Prisma migration status and verify the two tables without changing data:
+`20260721150000_remove_order_templates` is the required forward removal migration:
+
+- Drop `OrderTemplateItem` before `OrderTemplate` so the child foreign keys are removed in dependency order.
+- Treat the operation as destructive to the retired feature's stored rows and take the standard verified backup first.
+- Ordinary `Order` and `OrderItem` data are unaffected because they never referenced either retired table.
+- Existing order-set-related `AuditLog` rows remain as generic historical records; `AuditLog.entityType` and `entityId` are strings without foreign keys to the removed tables.
+- A fresh database still runs the historical add migration and then this removal migration in order, producing the same current schema without rewriting migration history.
+
+Before deployment, confirm the target, backup, and `prisma:migrate:status`. Apply the committed migration with `npm run prisma:migrate:deploy`; do not use `migrate resolve --applied` as a substitute for executing it.
+
+After deployment, verify that neither retired table remains:
 
 ```sql
 SELECT table_name
@@ -166,13 +171,81 @@ WHERE table_schema = 'public'
 ORDER BY table_name;
 ```
 
-Both rows must be returned. Do not use `migrate resolve --applied` as a substitute for executing this forward migration.
+The query must return zero rows, and `prisma:migrate:status` must report no pending or failed migration.
 
-On 2026-07-12, all migrations through `20260712150000_add_order_templates` were applied to the isolated `TEST_DATABASE_URL`; migration status was current and all 11 database integration tests passed.
+## Warehouse Inventory Cutover
 
-The operational database was then handled separately: all nine P0 preflight counts were zero, a PostgreSQL custom-format `public` schema backup was created and validated with `pg_restore --list`, and both forward migrations were applied over the verified `:5432` session-pooler connection. Post-deployment migration status was current, all 14 expected CHECK constraints and five key unique/partial indexes were present, and authenticated read-only requests to `/orders/templates` and `/orders/new` returned HTTP 200. The retained local backup is `/Users/chan/Backups/ReagentInventoryService/reagent-operational-pre-migration-20260712T134728Z.dump` with mode `0600` and SHA-256 `71d8d7d77d732b335012b79335c4cd0ca754a4b142f28ac787b0cb5d3e05c508`.
+The warehouse feature is delivered by two ordered forward migrations:
 
-At deployment time the saved local `.env` initially had the pooler ports assigned in reverse (`DATABASE_URL=:5432`, `DIRECT_URL=:6543`). The migration commands used a verified one-process override so no migration ran through the transaction pooler. The values were then corrected to `DATABASE_URL=:6543` and `DIRECT_URL=:5432`; ordinary `prisma:migrate:status` completed over `:5432`, and authenticated read-only screen checks completed over the normal `:6543` runtime path.
+- `20260721160000_add_transfer_movement_type` adds PostgreSQL enum value `TRANSFER` and commits it by itself. PostgreSQL must commit a newly added enum value before a following migration safely uses it in a CHECK constraint.
+- `20260721161000_add_warehouse_inventory` first takes `ACCESS EXCLUSIVE` locks on `ReagentLot` and `StockMovement`, creates the five-value `Warehouse` enum and `WarehouseStock`, copies every legacy `ReagentLot.currentQuantity` value—including zero—to `FINISHED_GOODS`, verifies the copy, adds movement warehouse fields and shape constraints, then drops the old quantity index, CHECK and column.
+
+`WarehouseStock` keyed by `(reagentLotId, warehouse)` becomes the single mutable quantity source. The table locks prevent legacy writes from racing the backfill and remain held until the transactional migration commits. This is still an application compatibility cutover: the old artifact reads and writes `ReagentLot.currentQuantity` and cannot run after the migration commits.
+
+Before the maintenance window, confirm that the P0 quantity constraint is present and run this read-only preflight:
+
+```sql
+SELECT COUNT(*) AS negative_legacy_balances
+FROM "ReagentLot"
+WHERE "currentQuantity" < 0;
+
+SELECT conname
+FROM pg_constraint
+WHERE conname = 'ReagentLot_currentQuantity_nonnegative_check';
+```
+
+The count must be `0` and the constraint query must return one row. Then use this deployment sequence:
+
+1. Confirm the exact target with `npm run prisma:migrate:status` over `DIRECT_URL`.
+2. Create a PostgreSQL backup, validate it with `pg_restore --list`, and record its path and checksum.
+3. Stop all application writes and background jobs. Do not allow the old artifact to process receiving, shipment, adjustment, replacement, or transfer requests during cutover.
+4. Run `npm run prisma:migrate:deploy`. Both migrations must complete in timestamp order.
+5. Run `npm run prisma:generate`, deploy the matching application artifact, and keep writes closed.
+6. Run the catalog and reconciliation queries below, then execute the focused application smoke tests.
+
+```sql
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'ReagentLot'
+  AND column_name = 'currentQuantity';
+
+SELECT COUNT(*) AS lots_without_balance
+FROM "ReagentLot" AS lot
+LEFT JOIN "WarehouseStock" AS stock
+  ON stock."reagentLotId" = lot."id"
+WHERE stock."reagentLotId" IS NULL;
+
+SELECT COUNT(*) AS negative_warehouse_balances
+FROM "WarehouseStock"
+WHERE "quantity" < 0;
+
+SELECT COUNT(*) AS invalid_transfers
+FROM "StockMovement"
+WHERE "type" = 'TRANSFER'::"StockMovementType"
+  AND (
+    "quantity" <= 0
+    OR "destinationWarehouse" IS NULL
+    OR "warehouse" = "destinationWarehouse"
+  );
+```
+
+All four queries must return zero rows or a zero count. Verify a partial move preserves the sum across all warehouses, produces one `TRANSFER` row with both warehouses and one `STOCK_TRANSFER` audit row, and that normal and replacement shipment availability includes only `FINISHED_GOODS`. Moving into `DISPOSAL` must preserve total physical quantity; use the separate disposal action to create `DISPOSE` and remove stock.
+
+Run the final code and database checks before reopening writes:
+
+```bash
+npm run prisma:validate
+npm run prisma:generate
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npm run prisma:migrate:status
+npm run test:integration
+```
+
+If the first enum migration succeeds but the second migration fails, `TRANSFER` may remain as an unused harmless enum value while the transactional cutover rolls back. Inspect `_prisma_migrations` and the catalog before resolving only the failed second migration as rolled back. If the database cutover succeeds but the new application fails, do not restart the old artifact; either deploy a forward-fixed compatible artifact or restore the verified pre-cutover backup together with the old artifact.
 
 ## Session Version Migration
 
@@ -196,6 +269,12 @@ The migration was applied to the isolated `TEST_DATABASE_URL` on 2026-07-13. All
 Migration `20260713120000_add_replacement_policy` adds the singleton `ReplacementPolicy` row. Administrators can change `detectionDays` (when a shipped LOT becomes a proactive-replacement notification candidate) and `minimumDeliveryShelfDays` (the minimum remaining expiry period allowed for replacement stock) from `/replacements`. Both values must be positive integers, and each change writes an `REPLACEMENT_POLICY_UPDATE` audit record.
 
 The migration initializes the policy to 60 notification days and 180 minimum delivery shelf-life days. It was applied to both the isolated test database and the operational Supabase database on 2026-07-13; migration status reports all six migrations current.
+
+## Order Image Migration
+
+Migration `20260721170000_add_order_image` adds the optional one-to-one `OrderImage` table. It stores only JPEG, PNG, or WebP content up to 3 MiB and enforces filename length, MIME allowlisting, byte-size bounds, and equality between the declared size and PostgreSQL `octet_length(data)`. The unique `orderId` foreign key uses `ON DELETE CASCADE`; cancelling an order does not delete its row or image.
+
+This is an additive migration and needs no existing-order backfill. Deploy it with `npm run prisma:migrate:deploy` before starting the matching application artifact, then run `npm run prisma:generate`. The application serves bytes only through the authenticated `/api/orders/[orderId]/image` route and does not write uploads to the ephemeral deployment filesystem. This migration has been committed but has not been applied to an operational database in this workspace session.
 
 ## Rollback and Recovery
 

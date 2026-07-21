@@ -57,6 +57,7 @@ Supabase PostgreSQL
 | 변수 | 설명 |
 |---|---|
 | DATABASE_URL | PostgreSQL 접속 URL |
+| DIRECT_URL | Prisma 마이그레이션용 직접 PostgreSQL 접속 URL |
 | AUTH_SECRET | 세션/인증 암호화 키 |
 | AUTH_URL | 서비스 URL |
 | APP_ENV | 실행 환경 |
@@ -66,12 +67,12 @@ Supabase PostgreSQL
 배포 전 다음 명령을 통과해야 한다.
 
 ```bash
+npm run prisma:validate
+npm run prisma:generate
 npm run lint
 npm run typecheck
 npm run test
 npm run build
-npx prisma validate
-npx prisma generate
 ```
 
 DB 마이그레이션은 운영 반영 전 반드시 검토한다.

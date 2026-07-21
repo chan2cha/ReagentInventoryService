@@ -2,7 +2,7 @@ import "server-only";
 
 /** 최소 재고와 LOT 수량을 조인 비교해야 하는 상태 필터를 DB에서 페이지 단위로 실행한다. */
 
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient, type Warehouse } from "@prisma/client";
 import { addDateOnlyDays, koreaDateKey } from "@/lib/date";
 import type { LotStatusKind } from "@/domain/lot-status";
 
@@ -10,6 +10,7 @@ type StatusFilteredLotQueryClient = Pick<PrismaClient, "$queryRaw">;
 
 export type StatusFilteredLotRecord = {
   id: string;
+  warehouse: Warehouse;
   lotNo: string;
   receivedDate: Date;
   expirationDate: Date;
@@ -27,9 +28,10 @@ type StatusFilteredLotQueryOptions = {
   q?: string;
   status: Extract<LotStatusKind, "LOW_STOCK" | "NORMAL">;
   now: Date;
+  warehouse?: Warehouse;
 };
 
-function statusFilteredLotFromWhere({ q, status, now }: StatusFilteredLotQueryOptions) {
+function statusFilteredLotFromWhere({ q, status, now, warehouse }: StatusFilteredLotQueryOptions) {
   // 만료·품절·임박 상태는 기존 상태 판정에서 먼저 제외되므로 재고 상태 조건만 남긴다.
   const afterExpiring = addDateOnlyDays(koreaDateKey(now), 31);
   const query = q?.trim() ?? "";
@@ -44,16 +46,21 @@ function statusFilteredLotFromWhere({ q, status, now }: StatusFilteredLotQueryOp
   const inventoryCondition = status === "LOW_STOCK"
     ? Prisma.sql`
         AND allergen."minStock" > 0
-        AND lot."currentQuantity" < allergen."minStock"`
+        AND stock."quantity" < allergen."minStock"`
     : Prisma.sql`
-        AND (allergen."minStock" <= 0 OR lot."currentQuantity" >= allergen."minStock")`;
+        AND (allergen."minStock" <= 0 OR stock."quantity" >= allergen."minStock")`;
+  const warehouseCondition = warehouse
+    ? Prisma.sql`AND stock."warehouse" = ${warehouse}::"Warehouse"`
+    : Prisma.empty;
 
   return Prisma.sql`
-    FROM "ReagentLot" AS lot
+    FROM "WarehouseStock" AS stock
+    INNER JOIN "ReagentLot" AS lot ON lot."id" = stock."reagentLotId"
     INNER JOIN "Allergen" AS allergen ON allergen."id" = lot."allergenId"
     WHERE lot."expirationDate" >= ${afterExpiring}
-      AND lot."currentQuantity" <> 0
+      AND stock."quantity" <> 0
       ${inventoryCondition}
+      ${warehouseCondition}
       ${searchCondition}`;
 }
 
@@ -79,11 +86,12 @@ export async function listStatusFilteredLots(
   return db.$queryRaw<StatusFilteredLotRecord[]>(Prisma.sql`
     SELECT
       lot."id",
+      stock."warehouse",
       lot."lotNo",
       lot."receivedDate",
       lot."expirationDate",
       lot."initialQuantity",
-      lot."currentQuantity",
+      stock."quantity" AS "currentQuantity",
       lot."memo",
       lot."isActive",
       allergen."name" AS "allergenName",
@@ -91,7 +99,7 @@ export async function listStatusFilteredLots(
       allergen."category" AS "allergenCategory",
       allergen."minStock" AS "minStock"
     ${statusFilteredLotFromWhere(filters)}
-    ORDER BY lot."expirationDate" ASC, lot."lotNo" ASC, lot."id" ASC
+    ORDER BY lot."expirationDate" ASC, lot."lotNo" ASC, stock."warehouse" ASC, lot."id" ASC
     LIMIT ${take} OFFSET ${skip}
   `);
 }

@@ -64,13 +64,13 @@ function mapOrderStatus(status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANC
 }
 
 function statusFromDbLot(lot: {
-  currentQuantity: number;
+  quantity: number;
   expirationDate: Date;
 }): LotStatus {
   const days = daysUntilDateOnly(lot.expirationDate);
 
   if (days < 0) return "유통기한 만료";
-  if (lot.currentQuantity === 0) return "품절";
+  if (lot.quantity === 0) return "품절";
   if (days <= 30) return "유통기한 임박";
   return "정상";
 }
@@ -161,25 +161,22 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
           createdAt: "asc"
         },skip:orderMeta.skip,take:PAGE_SIZE
       }),
-      prisma.reagentLot.findMany({
+      prisma.warehouseStock.findMany({
         where: {
-          currentQuantity: {
-            gt: 0
-          },
-          expirationDate: {
-            gte: today
-          },
-          receivedDate: {
-            lt: tomorrow
-          },
-          isActive: true
+          warehouse: "FINISHED_GOODS",
+          quantity: { gt: 0 },
+          reagentLot: { is: {
+            expirationDate: { gte: today },
+            receivedDate: { lt: tomorrow },
+            isActive: true
+          } }
         },
         include: {
-          allergen: true
+          reagentLot: { include: { allergen: true } }
         },
         orderBy: [
-          { expirationDate: "asc" },
-          { lotNo: "asc" }
+          { reagentLot: { expirationDate: "asc" } },
+          { reagentLot: { lotNo: "asc" } }
         ],
         take: 5
       }),
@@ -208,15 +205,22 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
       })
     ]);
     const allocationAllergenIds = [...new Set(dbOrders.flatMap((order) => order.items.map((item) => item.allergenId)))];
-    const allocationLots = allocationAllergenIds.length === 0 ? [] : await prisma.reagentLot.findMany({
+    const allocationStocks = allocationAllergenIds.length === 0 ? [] : await prisma.warehouseStock.findMany({
       where: {
-        allergenId: { in: allocationAllergenIds },
-        currentQuantity: { gt: 0 },
-        expirationDate: { gte: today },
-        receivedDate: { lt: tomorrow },
-        isActive: true
+        warehouse: "FINISHED_GOODS",
+        quantity: { gt: 0 },
+        reagentLot: { is: {
+          allergenId: { in: allocationAllergenIds },
+          expirationDate: { gte: today },
+          receivedDate: { lt: tomorrow },
+          isActive: true
+        } }
       },
-      orderBy: [{ expirationDate: "asc" }, { lotNo: "asc" }]
+      include: { reagentLot: true },
+      orderBy: [
+        { reagentLot: { expirationDate: "asc" } },
+        { reagentLot: { lotNo: "asc" } }
+      ]
     });
 
     return {
@@ -233,22 +237,31 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
         source: "database",
         allocationItems: order.items.map((item) => {
           let remaining = item.quantity;
-          const lotsForItem = allocationLots.filter((lot) => lot.allergenId === item.allergenId).map((lot) => {
-            const recommendedQuantity = Math.min(remaining, lot.currentQuantity);
+          const lotsForItem = allocationStocks.filter((stock) => stock.reagentLot.allergenId === item.allergenId).map((stock) => {
+            const recommendedQuantity = Math.min(remaining, stock.quantity);
             remaining -= recommendedQuantity;
-            return { id: lot.id, lotNo: lot.lotNo, expirationDate: lot.expirationDate.toISOString().slice(0, 10), currentQuantity: lot.currentQuantity, recommendedQuantity };
+            return {
+              id: stock.reagentLotId,
+              lotNo: stock.reagentLot.lotNo,
+              expirationDate: stock.reagentLot.expirationDate.toISOString().slice(0, 10),
+              currentQuantity: stock.quantity,
+              recommendedQuantity
+            };
           });
           return { id: item.id, code: item.allergen.code, name: item.allergen.name, quantity: item.quantity, availableQuantity: lotsForItem.reduce((sum, lot) => sum + lot.currentQuantity, 0), lots: lotsForItem };
         })
       })),
-      recommendedLots: dbLots.map((lot) => ({
-        id: lot.id,
-        allergenCode: lot.allergen.code,
-        allergenName: lot.allergen.name,
-        lotNo: lot.lotNo,
-        expirationDate: lot.expirationDate.toISOString().slice(0, 10),
-        currentQuantity: lot.currentQuantity,
-        status: statusFromDbLot(lot),
+      recommendedLots: dbLots.map((stock) => ({
+        id: stock.reagentLotId,
+        allergenCode: stock.reagentLot.allergen.code,
+        allergenName: stock.reagentLot.allergen.name,
+        lotNo: stock.reagentLot.lotNo,
+        expirationDate: stock.reagentLot.expirationDate.toISOString().slice(0, 10),
+        currentQuantity: stock.quantity,
+        status: statusFromDbLot({
+          quantity: stock.quantity,
+          expirationDate: stock.reagentLot.expirationDate
+        }),
         source: "database"
       })),
       shipmentHistory: dbShipments.map((shipment) => ({

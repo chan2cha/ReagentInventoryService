@@ -1,8 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  reapplyOrderTemplateToDraft,
-  selectOrderTemplateInDraft
-} from "@/domain/order-draft";
 
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
@@ -35,35 +31,24 @@ function redirectDigest(error: unknown) {
     : "";
 }
 
-describe("create order action with an applied order set", () => {
+describe("create order action", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireRole.mockResolvedValue({ id: "user-1" });
     mocks.createOrderValue.mockResolvedValue({ id: "order-1" });
   });
 
-  it("submits the idempotently merged draft and preserves the success redirect", async () => {
-    let nextRowId = 10;
-    const templateItems = [
-      { allergenId: "allergen-set-1", quantity: 2 },
-      { allergenId: "allergen-set-2", quantity: 3 }
-    ];
-    const firstDraft = selectOrderTemplateInDraft([
-      { rowId: 1, allergenId: "allergen-manual", quantity: "7" },
-      { rowId: 2, allergenId: "", quantity: "" }
-    ], "template-1", templateItems, () => nextRowId++);
-    const submittedDraft = reapplyOrderTemplateToDraft(
-      firstDraft,
-      "template-1",
-      templateItems,
-      () => nextRowId++
-    );
+  it("submits multiple manually entered items and preserves the success redirect", async () => {
     const data = new FormData();
     data.set("clientId", "client-1");
-    data.set("memo", "세트 주문");
-    for (const row of submittedDraft) {
-      data.append("allergenId", row.allergenId);
-      data.append("quantity", row.quantity);
+    data.set("memo", "수동 주문");
+    for (const [allergenId, quantity] of [
+      ["allergen-1", "7"],
+      ["allergen-2", "2"],
+      ["allergen-3", "3"]
+    ]) {
+      data.append("allergenId", allergenId);
+      data.append("quantity", quantity);
     }
 
     const error = await captureThrown(createOrder(data));
@@ -73,12 +58,12 @@ describe("create order action with an applied order set", () => {
       { kind: "test-db" },
       {
         clientId: "client-1",
-        memo: "세트 주문",
+        memo: "수동 주문",
         actorId: "user-1",
         items: [
-          { allergenId: "allergen-manual", quantity: 7 },
-          { allergenId: "allergen-set-1", quantity: 2 },
-          { allergenId: "allergen-set-2", quantity: 3 }
+          { allergenId: "allergen-1", quantity: 7 },
+          { allergenId: "allergen-2", quantity: 2 },
+          { allergenId: "allergen-3", quantity: 3 }
         ]
       }
     );
@@ -87,5 +72,29 @@ describe("create order action with an applied order set", () => {
     // the 303 response already covered by the built-server regression test.
     expect(redirectDigest(error)).toMatch(/\/orders;30[37];/);
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/orders");
+  });
+
+  it("validates and forwards an optional order image", async () => {
+    const data = new FormData();
+    data.set("clientId", "client-1");
+    data.append("allergenId", "allergen-1");
+    data.append("quantity", "1");
+    data.set("image", new File([
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    ], "주문서.png", { type: "image/png" }));
+
+    await captureThrown(createOrder(data));
+
+    expect(mocks.createOrderValue).toHaveBeenCalledWith(
+      { kind: "test-db" },
+      expect.objectContaining({
+        image: {
+          fileName: "주문서.png",
+          contentType: "image/png",
+          byteSize: 8,
+          data: expect.any(Uint8Array)
+        }
+      })
+    );
   });
 });

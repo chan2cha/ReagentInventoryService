@@ -2,14 +2,9 @@ import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { cancelPendingOrder } from "../services/order-service";
 import { createOrderValue } from "../services/order-create-service";
-import {
-  createOrderTemplate,
-  listActiveOrderTemplates,
-  setOrderTemplateActive,
-  updateOrderTemplate
-} from "../services/order-template-service";
 import { processShipment, reverseShipment } from "../services/shipment-service";
 import { adjustLotStockValue } from "../services/stock-service";
+import { transferWarehouseStock } from "../services/warehouse-transfer-service";
 import { completeReplacement, confirmReplacement } from "../services/replacement-service";
 import {
   listLotExportRows,
@@ -62,6 +57,51 @@ async function createOrder(quantity: number) {
   });
 }
 
+async function createLot(data: {
+  allergenId: string;
+  lotNo: string;
+  expirationDate: Date;
+  receivedDate: Date;
+  initialQuantity: number;
+  currentQuantity: number;
+  memo?: string;
+}) {
+  const { currentQuantity, ...lot } = data;
+  return prisma.reagentLot.create({
+    data: {
+      ...lot,
+      warehouseStocks: {
+        create: {
+          warehouse: "FINISHED_GOODS",
+          quantity: currentQuantity
+        }
+      }
+    }
+  });
+}
+
+function finishedGoodsTotal() {
+  return prisma.warehouseStock.aggregate({
+    where: {
+      warehouse: "FINISHED_GOODS",
+      reagentLot: { is: { allergenId } }
+    },
+    _sum: { quantity: true }
+  });
+}
+
+async function finishedGoodsQuantity(lotId: string) {
+  const stock = await prisma.warehouseStock.findUniqueOrThrow({
+    where: {
+      reagentLotId_warehouse: {
+        reagentLotId: lotId,
+        warehouse: "FINISHED_GOODS"
+      }
+    }
+  });
+  return stock.quantity;
+}
+
 describe("database transactions", () => {
   beforeAll(async () => {
     const user = await prisma.user.create({ data: { loginId: runId, name: "Integration Test", passwordHash: "test", role: "ADMIN" } });
@@ -77,7 +117,6 @@ describe("database transactions", () => {
       if (userId) {
         await prisma.auditLog.deleteMany({ where: { actorId: userId } });
         await prisma.stockMovement.deleteMany({ where: { creator: { id: userId } } });
-        await prisma.orderTemplate.deleteMany({ where: { createdBy: userId } });
       }
       if (clientId) {
         await prisma.replacement.deleteMany({ where: { originalShipmentItem: { shipment: { order: { clientId } } } } });
@@ -103,8 +142,8 @@ describe("database transactions", () => {
   });
 
   it("allocates earliest-expiring lots and blocks duplicate shipment", async () => {
-    const early = await prisma.reagentLot.create({ data: { allergenId, lotNo: `${runId}-early`, expirationDate: new Date("2031-01-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 2, currentQuantity: 2 } });
-    const later = await prisma.reagentLot.create({ data: { allergenId, lotNo: `${runId}-later`, expirationDate: new Date("2032-01-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 5, currentQuantity: 5 } });
+    const early = await createLot({ allergenId, lotNo: `${runId}-early`, expirationDate: new Date("2031-01-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 2, currentQuantity: 2 });
+    const later = await createLot({ allergenId, lotNo: `${runId}-later`, expirationDate: new Date("2032-01-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 5, currentQuantity: 5 });
     const order = await createOrder(5);
     const shipment = await processShipment(prisma, order.id, userId, shipmentNow);
     expect(await prisma.shipmentItem.findMany({ where: { shipmentId: shipment.id }, orderBy: { reagentLot: { expirationDate: "asc" } }, select: { reagentLotId: true, quantity: true } })).toEqual([{ reagentLotId: early.id, quantity: 2 }, { reagentLotId: later.id, quantity: 3 }]);
@@ -113,8 +152,7 @@ describe("database transactions", () => {
 
   it("exports filtered inventory and resolves outbound movement references", async () => {
     const lotNo = `${runId}-export`;
-    await prisma.reagentLot.create({
-      data: {
+    await createLot({
         allergenId,
         lotNo,
         expirationDate: new Date("2030-03-15"),
@@ -122,7 +160,6 @@ describe("database transactions", () => {
         initialQuantity: 2,
         currentQuantity: 2,
         memo: "엑셀 통합 테스트"
-      }
     });
     const order = await createOrder(1);
     await processShipment(prisma, order.id, userId, shipmentNow);
@@ -159,7 +196,7 @@ describe("database transactions", () => {
 
   it("rolls back an insufficient shipment without stock or audit changes", async () => {
     const order = await createOrder(10000);
-    const before = await prisma.reagentLot.aggregate({ where: { allergenId }, _sum: { currentQuantity: true } });
+    const before = await finishedGoodsTotal();
     const auditCountBefore = await prisma.auditLog.count({
       where: {
         action: "SHIPMENT_CREATE",
@@ -167,8 +204,8 @@ describe("database transactions", () => {
       }
     });
     await expect(processShipment(prisma, order.id, userId, shipmentNow)).rejects.toThrow("INSUFFICIENT_STOCK");
-    const after = await prisma.reagentLot.aggregate({ where: { allergenId }, _sum: { currentQuantity: true } });
-    expect(after._sum.currentQuantity).toBe(before._sum.currentQuantity);
+    const after = await finishedGoodsTotal();
+    expect(after._sum.quantity).toBe(before._sum.quantity);
     expect(await prisma.shipment.count({ where: { orderId: order.id } })).toBe(0);
     expect(await prisma.auditLog.count({ where: { action: "SHIPMENT_CREATE", actorId: userId } })).toBe(auditCountBefore);
   });
@@ -182,35 +219,29 @@ describe("database transactions", () => {
   });
 
   it("excludes expired and future-received lots while allowing a lot through its expiration day", async () => {
-    const expired = await prisma.reagentLot.create({
-      data: {
+    const expired = await createLot({
         allergenId,
         lotNo: `${runId}-expired`,
         expirationDate: new Date("2030-01-14"),
         receivedDate: new Date("2029-01-01"),
         initialQuantity: 3,
         currentQuantity: 3
-      }
     });
-    const expiresToday = await prisma.reagentLot.create({
-      data: {
+    const expiresToday = await createLot({
         allergenId,
         lotNo: `${runId}-expires-today`,
         expirationDate: new Date("2030-01-15"),
         receivedDate: new Date("2029-01-01"),
         initialQuantity: 2,
         currentQuantity: 2
-      }
     });
-    const futureReceived = await prisma.reagentLot.create({
-      data: {
+    const futureReceived = await createLot({
         allergenId,
         lotNo: `${runId}-future-received`,
         expirationDate: new Date("2030-02-01"),
         receivedDate: new Date("2030-01-16"),
         initialQuantity: 3,
         currentQuantity: 3
-      }
     });
     const order = await createOrder(2);
 
@@ -225,20 +256,13 @@ describe("database transactions", () => {
         quantity: true
       }
     })).toEqual([{ reagentLotId: expiresToday.id, quantity: 2 }]);
-    expect((await prisma.reagentLot.findUniqueOrThrow({ where: { id: expired.id } })).currentQuantity).toBe(3);
-    expect((await prisma.reagentLot.findUniqueOrThrow({ where: { id: futureReceived.id } })).currentQuantity).toBe(3);
+    expect(await finishedGoodsQuantity(expired.id)).toBe(3);
+    expect(await finishedGoodsQuantity(futureReceived.id)).toBe(3);
   });
 
   it("serializes duplicate shipment and duplicate reversal requests", async () => {
     const order = await createOrder(1);
-    const before = await prisma.reagentLot.aggregate({
-      where: {
-        allergenId
-      },
-      _sum: {
-        currentQuantity: true
-      }
-    });
+    const before = await finishedGoodsTotal();
     const shipmentResults = await Promise.allSettled([
       processShipment(prisma, order.id, userId, shipmentNow),
       processShipment(concurrentPrisma, order.id, userId, shipmentNow)
@@ -247,7 +271,7 @@ describe("database transactions", () => {
     expect(shipmentResults.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(shipmentResults.filter((result) => result.status === "rejected")).toHaveLength(1);
     expect(await prisma.shipment.count({ where: { orderId: order.id, status: "SHIPPED" } })).toBe(1);
-    expect((await prisma.reagentLot.aggregate({ where: { allergenId }, _sum: { currentQuantity: true } }))._sum.currentQuantity).toBe((before._sum.currentQuantity ?? 0) - 1);
+    expect((await finishedGoodsTotal())._sum.quantity).toBe((before._sum.quantity ?? 0) - 1);
 
     const shipment = await prisma.shipment.findFirstOrThrow({
       where: {
@@ -262,7 +286,7 @@ describe("database transactions", () => {
 
     expect(reversalResults.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(reversalResults.filter((result) => result.status === "rejected")).toHaveLength(1);
-    expect((await prisma.reagentLot.aggregate({ where: { allergenId }, _sum: { currentQuantity: true } }))._sum.currentQuantity).toBe(before._sum.currentQuantity);
+    expect((await finishedGoodsTotal())._sum.quantity).toBe(before._sum.quantity);
     expect(await prisma.stockMovement.count({
       where: {
         refType: "SHIPMENT_CANCEL",
@@ -273,14 +297,7 @@ describe("database transactions", () => {
 
   it("keeps order cancellation and shipment mutually exclusive under contention", async () => {
     const order = await createOrder(1);
-    const before = await prisma.reagentLot.aggregate({
-      where: {
-        allergenId
-      },
-      _sum: {
-        currentQuantity: true
-      }
-    });
+    const before = await finishedGoodsTotal();
     const results = await Promise.allSettled([
       processShipment(prisma, order.id, userId, shipmentNow),
       cancelPendingOrder(concurrentPrisma, order.id, userId, "동시 주문 취소")
@@ -296,38 +313,29 @@ describe("database transactions", () => {
         status: "SHIPPED"
       }
     });
-    const after = await prisma.reagentLot.aggregate({
-      where: {
-        allergenId
-      },
-      _sum: {
-        currentQuantity: true
-      }
-    });
+    const after = await finishedGoodsTotal();
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
 
     if (savedOrder.status === "SHIPPED") {
       expect(activeShipmentCount).toBe(1);
-      expect(after._sum.currentQuantity).toBe((before._sum.currentQuantity ?? 0) - 1);
+      expect(after._sum.quantity).toBe((before._sum.quantity ?? 0) - 1);
     } else {
       expect(savedOrder.status).toBe("CANCELLED");
       expect(activeShipmentCount).toBe(0);
-      expect(after._sum.currentQuantity).toBe(before._sum.currentQuantity);
+      expect(after._sum.quantity).toBe(before._sum.quantity);
     }
   });
 
   it("uses a conditional decrement to prevent concurrent adjustments from making stock negative", async () => {
-    const lot = await prisma.reagentLot.create({
-      data: {
+    const lot = await createLot({
         allergenId,
         lotNo: `${runId}-adjustment-race`,
         expirationDate: new Date("2030-03-01"),
         receivedDate: new Date("2029-01-01"),
         initialQuantity: 1,
         currentQuantity: 1
-      }
     });
     const input = {
       lotId: lot.id,
@@ -343,7 +351,7 @@ describe("database transactions", () => {
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
-    expect((await prisma.reagentLot.findUniqueOrThrow({ where: { id: lot.id } })).currentQuantity).toBe(0);
+    expect(await finishedGoodsQuantity(lot.id)).toBe(0);
     expect(await prisma.stockMovement.count({
       where: {
         refType: "STOCK_ADJUSTMENT",
@@ -354,135 +362,99 @@ describe("database transactions", () => {
 
   it("rejects duplicate reagent lots", async () => {
     const data = { allergenId, lotNo: runId, expirationDate: new Date("2030-01-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 10, currentQuantity: 10 };
-    await prisma.reagentLot.create({ data });
-    await expect(prisma.reagentLot.create({ data })).rejects.toMatchObject({ code: "P2002" });
+    await createLot(data);
+    const duplicateLot = {
+      allergenId: data.allergenId,
+      lotNo: data.lotNo,
+      expirationDate: data.expirationDate,
+      receivedDate: data.receivedDate,
+      initialQuantity: data.initialQuantity
+    };
+    await expect(prisma.reagentLot.create({ data: duplicateLot })).rejects.toMatchObject({ code: "P2002" });
   });
 
-  it("persists, concurrently updates, searches, and deactivates a reusable order template", async () => {
-    const templateName = `공용 주문 세트 ${crypto.randomUUID()}`;
-    const created = await createOrderTemplate(prisma, {
-      name: templateName,
-      description: "통합 테스트 기본 구성",
-      items: [{ allergenId, quantity: 2 }],
-      actorId: userId
+  it("rejects an order that references an inactive reagent", async () => {
+    await prisma.allergen.update({
+      where: { id: allergenId },
+      data: { isActive: false }
     });
 
-    expect(created).toMatchObject({
-      name: templateName,
-      description: "통합 테스트 기본 구성",
-      isActive: true,
-      version: 1
-    });
-    expect(created.items).toHaveLength(1);
-    expect(created.items[0]).toMatchObject({ allergenId, quantity: 2, position: 0 });
-
-    const searched = await listActiveOrderTemplates(prisma, runId.toUpperCase());
-    expect(searched.some((template) => template.id === created.id)).toBe(true);
-
-    const updateResults = await Promise.allSettled([
-      updateOrderTemplate(prisma, {
-        id: created.id,
-        expectedVersion: created.version,
-        name: templateName,
-        description: "동시 수정 A",
-        items: [{ allergenId, quantity: 4 }],
-        actorId: userId
-      }),
-      updateOrderTemplate(concurrentPrisma, {
-        id: created.id,
-        expectedVersion: created.version,
-        name: templateName,
-        description: "동시 수정 B",
-        items: [{ allergenId, quantity: 5 }],
-        actorId: userId
-      })
-    ]);
-    const successfulUpdate = updateResults.find((result) => result.status === "fulfilled");
-    const rejectedUpdate = updateResults.find((result) => result.status === "rejected");
-
-    expect(updateResults.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(updateResults.filter((result) => result.status === "rejected")).toHaveLength(1);
-    expect(rejectedUpdate).toMatchObject({
-      status: "rejected",
-      reason: expect.objectContaining({
-        message: expect.stringMatching(/^(TEMPLATE_VERSION_CONFLICT|TRANSACTION_CONFLICT)$/)
-      })
-    });
-    if (!successfulUpdate || successfulUpdate.status !== "fulfilled") {
-      throw new Error("EXPECTED_ONE_SUCCESSFUL_TEMPLATE_UPDATE");
-    }
-
-    const updated = successfulUpdate.value;
-    expect(updated.version).toBe(2);
-    expect(["동시 수정 A", "동시 수정 B"]).toContain(updated.description);
-    expect(updated.items[0]).toMatchObject({ allergenId, position: 0 });
-    expect([4, 5]).toContain(updated.items[0].quantity);
-    expect(await prisma.orderTemplate.findUniqueOrThrow({
-      where: { id: created.id },
-      include: { items: true }
-    })).toMatchObject({
-      version: updated.version,
-      description: updated.description,
-      items: [{ allergenId, quantity: updated.items[0].quantity, position: 0 }]
-    });
-
-    await expect(updateOrderTemplate(prisma, {
-      id: created.id,
-      expectedVersion: created.version,
-      name: templateName,
-      description: "오래된 편집 내용",
-      items: [{ allergenId, quantity: 9 }],
-      actorId: userId
-    })).rejects.toThrow("TEMPLATE_VERSION_CONFLICT");
-
-    const deactivated = await setOrderTemplateActive(prisma, {
-      id: created.id,
-      expectedVersion: updated.version,
-      isActive: false,
-      actorId: userId
-    });
-    expect(deactivated).toMatchObject({ isActive: false, version: 3 });
-    expect((await listActiveOrderTemplates(prisma)).some((template) => template.id === created.id)).toBe(false);
-
-    await prisma.allergen.update({ where: { id: allergenId }, data: { isActive: false } });
     try {
-      await expect(setOrderTemplateActive(prisma, {
-        id: created.id,
-        expectedVersion: deactivated.version,
-        isActive: true,
-        actorId: userId
-      })).rejects.toThrow("TEMPLATE_INACTIVE_ALLERGEN");
-
       const orderCountBefore = await prisma.order.count({ where: { clientId } });
       const orderAuditCountBefore = await prisma.auditLog.count({
         where: { actorId: userId, action: "ORDER_CREATE" }
       });
+
       await expect(createOrderValue(prisma, {
         clientId,
-        memo: "비활성 시약이 담긴 오래된 주문 화면",
+        memo: "inactive reagent order",
         items: [{ allergenId, quantity: 1 }],
         actorId: userId,
         now: new Date("2099-12-30T03:00:00.000Z")
       })).rejects.toThrow("ALLERGEN_NOT_FOUND");
+
       expect(await prisma.order.count({ where: { clientId } })).toBe(orderCountBefore);
       expect(await prisma.auditLog.count({
         where: { actorId: userId, action: "ORDER_CREATE" }
       })).toBe(orderAuditCountBefore);
     } finally {
-      await prisma.allergen.update({ where: { id: allergenId }, data: { isActive: true } });
+      await prisma.allergen.update({
+        where: { id: allergenId },
+        data: { isActive: true }
+      });
     }
+  });
 
-    expect(await prisma.orderTemplate.findUniqueOrThrow({ where: { id: created.id } }))
-      .toMatchObject({ isActive: false, version: 3 });
-    expect(await prisma.auditLog.count({
-      where: {
-        actorId: userId,
-        entityId: created.id,
-        action: {
-          in: ["ORDER_TEMPLATE_CREATE", "ORDER_TEMPLATE_UPDATE", "ORDER_TEMPLATE_DEACTIVATE"]
-        }
+  it("moves a partial LOT quantity between warehouses without changing the total", async () => {
+    const lot = await createLot({
+      allergenId,
+      lotNo: `${runId}-warehouse-transfer`,
+      expirationDate: new Date("2031-06-01"),
+      receivedDate: new Date("2029-01-01"),
+      initialQuantity: 12,
+      currentQuantity: 10
+    });
+    await prisma.warehouseStock.create({
+      data: {
+        reagentLotId: lot.id,
+        warehouse: "RETURNED",
+        quantity: 2
       }
-    })).toBe(3);
+    });
+
+    const totalBefore = (await prisma.warehouseStock.aggregate({
+      where: { reagentLotId: lot.id },
+      _sum: { quantity: true }
+    }))._sum.quantity;
+
+    await transferWarehouseStock(prisma, {
+      lotId: lot.id,
+      sourceWarehouse: "FINISHED_GOODS",
+      destinationWarehouse: "RETURNED",
+      quantity: 3,
+      reason: "반품 창고 분리",
+      actorId: userId
+    });
+
+    const balances = await prisma.warehouseStock.findMany({
+      where: { reagentLotId: lot.id },
+      orderBy: { warehouse: "asc" }
+    });
+    expect(balances.map((balance) => [balance.warehouse, balance.quantity]))
+      .toEqual([["FINISHED_GOODS", 7], ["RETURNED", 5]]);
+    expect(balances.reduce((total, balance) => total + balance.quantity, 0)).toBe(totalBefore);
+    expect(await prisma.stockMovement.count({
+      where: {
+        reagentLotId: lot.id,
+        type: "TRANSFER",
+        warehouse: "FINISHED_GOODS",
+        destinationWarehouse: "RETURNED",
+        quantity: 3
+      }
+    })).toBe(1);
+    expect(await prisma.auditLog.count({
+      where: { actorId: userId, action: "STOCK_TRANSFER" }
+    })).toBeGreaterThan(0);
   });
 
   it("allocates distinct order numbers for concurrent order creation", async () => {
@@ -515,27 +487,32 @@ describe("database transactions", () => {
   });
 
   it("rolls back stock and audit writes when a transaction fails", async () => {
-    const lot = await prisma.reagentLot.findFirstOrThrow({
+    const stock = await prisma.warehouseStock.findFirstOrThrow({
       where: {
-        allergenId,
-        currentQuantity: {
-          gt: 0
-        }
+        warehouse: "FINISHED_GOODS",
+        quantity: { gt: 0 },
+        reagentLot: { is: { allergenId } }
       }
     });
-    const beforeQuantity = lot.currentQuantity;
+    const beforeQuantity = stock.quantity;
     await expect(prisma.$transaction(async (tx) => {
-      await tx.reagentLot.update({ where: { id: lot.id }, data: { currentQuantity: { decrement: 1 } } });
-      await tx.auditLog.create({ data: { action: "TEST_ROLLBACK", entityType: "LOT", entityId: lot.id, description: "rollback", actorId: userId } });
+      await tx.warehouseStock.update({
+        where: { reagentLotId_warehouse: {
+          reagentLotId: stock.reagentLotId,
+          warehouse: stock.warehouse
+        } },
+        data: { quantity: { decrement: 1 } }
+      });
+      await tx.auditLog.create({ data: { action: "TEST_ROLLBACK", entityType: "LOT", entityId: stock.reagentLotId, description: "rollback", actorId: userId } });
       throw new Error("ROLLBACK");
     })).rejects.toThrow("ROLLBACK");
-    expect((await prisma.reagentLot.findUniqueOrThrow({ where: { id: lot.id } })).currentQuantity).toBe(beforeQuantity);
+    expect(await finishedGoodsQuantity(stock.reagentLotId)).toBe(beforeQuantity);
     expect(await prisma.auditLog.count({ where: { action: "TEST_ROLLBACK", actorId: userId } })).toBe(0);
   });
 
   it("confirms a proactive replacement and ships eligible replacement stock", async () => {
-    const originalLot = await prisma.reagentLot.create({ data: { allergenId, lotNo: `${runId}-replacement-original`, expirationDate: new Date("2030-03-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 2, currentQuantity: 0 } });
-    await prisma.reagentLot.create({ data: { allergenId, lotNo: `${runId}-replacement-new`, expirationDate: new Date("2031-01-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 2, currentQuantity: 2 } });
+    const originalLot = await createLot({ allergenId, lotNo: `${runId}-replacement-original`, expirationDate: new Date("2030-03-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 2, currentQuantity: 0 });
+    await createLot({ allergenId, lotNo: `${runId}-replacement-new`, expirationDate: new Date("2031-01-01"), receivedDate: new Date("2029-01-01"), initialQuantity: 2, currentQuantity: 2 });
     const order = await createOrder(2);
     await prisma.order.update({ where: { id: order.id }, data: { status: "SHIPPED" } });
     const shipment = await prisma.shipment.create({ data: { orderId: order.id, shippedBy: userId, purpose: "ORDER" } });

@@ -8,7 +8,7 @@ import { getFlashMessage } from "@/lib/flash-message";
 export const dynamic = "force-dynamic";
 
 export default async function NewOrderPage() {
-  const [{ clients, allergens, templates, templateLoadFailed }, flash] = await Promise.all([
+  const [{ clients, allergens }, flash] = await Promise.all([
     getOrderFormData(),
     getFlashMessage(),
     requirePageRole(["ADMIN", "ORDER_MANAGER"])
@@ -19,17 +19,12 @@ export default async function NewOrderPage() {
     <AppShell
       active="/orders"
       title="주문 등록"
-      description="거래처와 시약을 선택해 새 주문을 등록합니다."
+      description="거래처와 시약을 검색해 선택하고 새 주문을 등록합니다."
     >
       <div className="form-layout">
         <Panel title="주문 정보" note="최신 정보">
           <FlashMessage form value={flash} />
-          <OrderForm
-            allergens={allergens}
-            clients={clients}
-            templateLoadFailed={templateLoadFailed}
-            templates={templates}
-          />
+          <OrderForm allergens={allergens} clients={clients} />
         </Panel>
 
         <Panel title="등록 기준">
@@ -37,7 +32,7 @@ export default async function NewOrderPage() {
             <p>주문번호는 ORD-YYYYMMDD-### 형식으로 자동 생성됩니다.</p>
             <p>신규 주문은 접수 상태로 생성되고 출고 처리 화면에 표시됩니다.</p>
             <p>하나의 주문에 여러 시약과 수량을 함께 등록할 수 있습니다.</p>
-            <p>주문 세트는 품목 초안만 채우며, 저장 전에 수량을 수정할 수 있습니다.</p>
+            <p>주문 참고 이미지는 JPG, PNG, WebP 중 1개를 3MB까지 첨부할 수 있습니다.</p>
             {!canSubmit ? <p>거래처와 시약 목록을 불러오지 못했습니다.</p> : null}
           </div>
         </Panel>

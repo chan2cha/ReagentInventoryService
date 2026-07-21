@@ -7,7 +7,8 @@ import {
   buildExportWorkbook,
   type ExportMetadataFilter,
   type InventoryExportRow,
-  type MovementExportRow
+  type MovementExportRow,
+  type OrderHistoryExportRow
 } from "@/lib/excel-export";
 import { prisma } from "@/lib/prisma";
 import {
@@ -15,8 +16,10 @@ import {
   EXPORT_ROW_LIMIT,
   listLotExportRows,
   listMovementExportRows,
+  listOrderExportRows,
   type LotExportRow,
-  type MovementExportRow as MovementDataRow
+  type MovementExportRow as MovementDataRow,
+  type OrderExportRow as OrderDataRow
 } from "@/services/export-data-service";
 import {
   isStockMovementKind,
@@ -27,6 +30,11 @@ import {
   lotStatusLabel,
   type LotStatusKind
 } from "@/domain/lot-status";
+import {
+  isWarehouseKind,
+  warehouseLabel,
+  type WarehouseKind
+} from "@/domain/warehouse";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -44,7 +52,7 @@ const EXPORT_TRANSACTION_OPTIONS = {
   timeout: 15_000
 };
 
-type ReportKind = "inventory" | "movements" | "combined";
+type ReportKind = "inventory" | "movements" | "orders" | "combined";
 type DatasetKind = "inventory" | "movements";
 
 class ExportRequestError extends Error {
@@ -87,7 +95,12 @@ function queryValue(searchParams: URLSearchParams, name: string) {
 function parseReport(searchParams: URLSearchParams): ReportKind {
   const report = searchParams.get("report");
 
-  if (report === "inventory" || report === "movements" || report === "combined") {
+  if (
+    report === "inventory" ||
+    report === "movements" ||
+    report === "orders" ||
+    report === "combined"
+  ) {
     return report;
   }
 
@@ -99,14 +112,17 @@ function parseReport(searchParams: URLSearchParams): ReportKind {
 
 function assertAllowedParameters(searchParams: URLSearchParams, report: ReportKind) {
   const allowed = {
-    inventory: new Set(["report", "q", "status"]),
-    movements: new Set(["report", "q", "from", "to", "type"]),
+    inventory: new Set(["report", "q", "status", "warehouse"]),
+    movements: new Set(["report", "q", "from", "to", "type", "warehouse"]),
+    orders: new Set(["report", "q", "from", "to"]),
     combined: new Set([
       "report",
       "datasets",
       "inventoryQ",
       "inventoryStatus",
+      "inventoryWarehouse",
       "movementQ",
+      "movementWarehouse",
       "from",
       "to",
       "type"
@@ -148,7 +164,7 @@ function assertSelectedDatasetParameters(
   searchParams: URLSearchParams,
   datasets: readonly DatasetKind[]
 ) {
-  const inventoryParameters = ["inventoryQ", "inventoryStatus"];
+  const inventoryParameters = ["inventoryQ", "inventoryStatus", "inventoryWarehouse"];
   if (
     !datasets.includes("inventory") &&
     inventoryParameters.some((name) => searchParams.has(name))
@@ -159,7 +175,7 @@ function assertSelectedDatasetParameters(
     );
   }
 
-  const movementParameters = ["movementQ", "from", "to", "type"];
+  const movementParameters = ["movementQ", "movementWarehouse", "from", "to", "type"];
   if (
     !datasets.includes("movements") &&
     movementParameters.some((name) => searchParams.has(name))
@@ -200,6 +216,7 @@ function inventoryWorkbookRows(rows: LotExportRow[]): InventoryExportRow[] {
     reagentName: row.allergenName,
     category: row.category,
     lotNo: row.lotNo,
+    warehouse: warehouseLabel(row.warehouse),
     receivedDate: row.receivedDate,
     expirationDate: row.expirationDate,
     initialQuantity: row.initialQuantity,
@@ -216,7 +233,8 @@ function referenceTypeLabel(value: string | null) {
     RECEIVING: "입고 등록",
     SHIPMENT: "출고",
     SHIPMENT_CANCEL: "출고취소",
-    STOCK_ADJUSTMENT: "재고 조정"
+    STOCK_ADJUSTMENT: "재고 조정",
+    WAREHOUSE_TRANSFER: "창고 이동"
   };
 
   return value ? labels[value] ?? value : null;
@@ -229,6 +247,10 @@ function movementWorkbookRows(rows: MovementDataRow[]): MovementExportRow[] {
     reagentCode: row.allergenCode,
     reagentName: row.allergenName,
     lotNo: row.lotNo,
+    warehouse: warehouseLabel(row.warehouse),
+    destinationWarehouse: row.destinationWarehouse
+      ? warehouseLabel(row.destinationWarehouse)
+      : null,
     expirationDate: row.expirationDate,
     recordedQuantity: row.rawQuantity,
     stockDelta: row.deltaQuantity,
@@ -240,28 +262,69 @@ function movementWorkbookRows(rows: MovementDataRow[]): MovementExportRow[] {
   }));
 }
 
-function movementFilterValues(searchParams: URLSearchParams, queryName = "q") {
+function warehouseFilterValue(searchParams: URLSearchParams, name: string) {
+  const value = queryValue(searchParams, name);
+
+  if (value && !isWarehouseKind(value)) {
+    throw new Error("EXPORT_FILTER_WAREHOUSE_INVALID");
+  }
+
+  return value as WarehouseKind | "";
+}
+
+function orderWorkbookRows(rows: OrderDataRow[]): OrderHistoryExportRow[] {
+  return rows.map((row) => ({
+    orderedAt: row.createdAt,
+    orderNo: row.orderNo,
+    status: row.status,
+    clientName: row.clientName,
+    clientManager: row.clientManager,
+    reagentCode: row.allergenCode,
+    reagentName: row.allergenName,
+    quantity: row.quantity,
+    memo: row.memo,
+    hasImage: row.hasImage,
+    creatorName: row.creatorName
+  }));
+}
+
+function movementFilterValues(
+  searchParams: URLSearchParams,
+  queryName = "q",
+  warehouseName = "warehouse"
+) {
   const q = queryValue(searchParams, queryName);
   const from = queryValue(searchParams, "from");
   const to = queryValue(searchParams, "to");
   const type = queryValue(searchParams, "type");
+  const warehouse = warehouseFilterValue(searchParams, warehouseName);
 
-  return { q, from, to, type };
+  return { q, from, to, type, warehouse };
+}
+
+function orderFilterValues(searchParams: URLSearchParams) {
+  return {
+    q: queryValue(searchParams, "q"),
+    from: queryValue(searchParams, "from"),
+    to: queryValue(searchParams, "to")
+  };
 }
 
 function inventoryFilterValues(
   searchParams: URLSearchParams,
   queryName = "q",
-  statusName = "status"
+  statusName = "status",
+  warehouseName = "warehouse"
 ) {
   const q = queryValue(searchParams, queryName);
   const statusValue = queryValue(searchParams, statusName);
+  const warehouse = warehouseFilterValue(searchParams, warehouseName);
 
   if (statusValue && !isLotStatusKind(statusValue)) {
     throw new Error("EXPORT_FILTER_STATUS_INVALID");
   }
 
-  return { q, status: statusValue as LotStatusKind | "" };
+  return { q, status: statusValue as LotStatusKind | "", warehouse };
 }
 
 function addInventoryFilters(
@@ -272,6 +335,9 @@ function addInventoryFilters(
   if (values.q) filters.push({ label: `${prefix}검색어`, value: values.q });
   if (values.status) {
     filters.push({ label: `${prefix}상태`, value: lotStatusLabel(values.status) });
+  }
+  if (values.warehouse) {
+    filters.push({ label: `${prefix}창고`, value: warehouseLabel(values.warehouse) });
   }
 }
 
@@ -290,6 +356,22 @@ function addMovementFilters(
   if (values.type && isStockMovementKind(values.type)) {
     filters.push({ label: `${prefix}구분`, value: stockMovementTypeLabel(values.type) });
   }
+  if (values.warehouse) {
+    filters.push({ label: `${prefix}창고`, value: warehouseLabel(values.warehouse) });
+  }
+}
+
+function addOrderFilters(
+  filters: ExportMetadataFilter[],
+  values: ReturnType<typeof orderFilterValues>
+) {
+  if (values.q) filters.push({ label: "검색어", value: values.q });
+  if (values.from || values.to) {
+    filters.push({
+      label: "주문일",
+      value: `${values.from || "처음"} ~ ${values.to || "현재"}`
+    });
+  }
 }
 
 function compactAuditValue(value: string) {
@@ -300,6 +382,7 @@ function compactAuditValue(value: string) {
 function assertTextBudget(
   inventory: readonly InventoryExportRow[] | undefined,
   movements: readonly MovementExportRow[] | undefined,
+  orders: readonly OrderHistoryExportRow[] | undefined,
   metadataValues: readonly string[]
 ) {
   let totalBytes = 0;
@@ -331,6 +414,7 @@ function assertTextBudget(
     include(row.reagentName, `재고 ${index + 1}행 시약명`);
     include(row.category, `재고 ${index + 1}행 분류`);
     include(row.lotNo, `재고 ${index + 1}행 제조번호`);
+    include(row.warehouse, `재고 ${index + 1}행 창고`);
     include(row.status, `재고 ${index + 1}행 상태`);
     include(row.memo, `재고 ${index + 1}행 메모`);
   });
@@ -339,11 +423,23 @@ function assertTextBudget(
     include(row.reagentCode, `이력 ${index + 1}행 시약 코드`);
     include(row.reagentName, `이력 ${index + 1}행 시약명`);
     include(row.lotNo, `이력 ${index + 1}행 제조번호`);
+    include(row.warehouse, `이력 ${index + 1}행 처리/출발 창고`);
+    include(row.destinationWarehouse, `이력 ${index + 1}행 도착 창고`);
     include(row.reason, `이력 ${index + 1}행 사유`);
     include(row.referenceType, `이력 ${index + 1}행 참조 유형`);
     include(row.orderNo, `이력 ${index + 1}행 주문번호`);
     include(row.clientName, `이력 ${index + 1}행 거래처`);
     include(row.actorName, `이력 ${index + 1}행 처리자`);
+  });
+  orders?.forEach((row, index) => {
+    include(row.orderNo, `주문 ${index + 1}행 주문번호`);
+    include(row.status, `주문 ${index + 1}행 상태`);
+    include(row.clientName, `주문 ${index + 1}행 거래처`);
+    include(row.clientManager, `주문 ${index + 1}행 담당자`);
+    include(row.reagentCode, `주문 ${index + 1}행 시약 코드`);
+    include(row.reagentName, `주문 ${index + 1}행 시약명`);
+    include(row.memo, `주문 ${index + 1}행 메모`);
+    include(row.creatorName, `주문 ${index + 1}행 등록자`);
   });
 }
 
@@ -355,6 +451,8 @@ async function generateExport(
 ) {
   let inventory: InventoryExportRow[] | undefined;
   let movements: MovementExportRow[] | undefined;
+  let orders: OrderHistoryExportRow[] | undefined;
+  let orderCounts: { orders: number; orderItems: number } | undefined;
   const filters: ExportMetadataFilter[] = [];
   let action: string;
   let title: string;
@@ -382,6 +480,21 @@ async function generateExport(
     action = "MOVEMENT_EXPORT";
     title = "입출고이력";
     asciiTitle = "movements";
+  } else if (report === "orders") {
+    const values = orderFilterValues(searchParams);
+    const rows = await prisma.$transaction(
+      (tx) => listOrderExportRows(tx, values),
+      EXPORT_TRANSACTION_OPTIONS
+    );
+    orders = orderWorkbookRows(rows);
+    orderCounts = {
+      orders: new Set(rows.map((row) => row.orderId)).size,
+      orderItems: rows.length
+    };
+    addOrderFilters(filters, values);
+    action = "ORDER_EXPORT";
+    title = "주문내역";
+    asciiTitle = "orders";
   } else {
     const datasets = parseDatasets(searchParams);
     assertSelectedDatasetParameters(searchParams, datasets);
@@ -391,10 +504,15 @@ async function generateExport(
     });
 
     const inventoryValues = datasets.includes("inventory")
-      ? inventoryFilterValues(searchParams, "inventoryQ", "inventoryStatus")
+      ? inventoryFilterValues(
+          searchParams,
+          "inventoryQ",
+          "inventoryStatus",
+          "inventoryWarehouse"
+        )
       : null;
     const movementValues = datasets.includes("movements")
-      ? movementFilterValues(searchParams, "movementQ")
+      ? movementFilterValues(searchParams, "movementQ", "movementWarehouse")
       : null;
     const rows = await prisma.$transaction(async (tx) => ({
       inventory: datasets.includes("inventory")
@@ -424,6 +542,7 @@ async function generateExport(
   assertTextBudget(
     inventory,
     movements,
+    orders,
     [generatedBy, ...filters.flatMap((filter) => [filter.label, filter.value])]
   );
 
@@ -434,7 +553,8 @@ async function generateExport(
       filters
     },
     inventory,
-    movements
+    movements,
+    orders
   });
 
   if (buffer.length > MAX_EXPORT_FILE_BYTES) {
@@ -448,7 +568,8 @@ async function generateExport(
   const auditPayload = {
     counts: {
       ...(inventory === undefined ? {} : { inventory: inventory.length }),
-      ...(movements === undefined ? {} : { movements: movements.length })
+      ...(movements === undefined ? {} : { movements: movements.length }),
+      ...(orderCounts ?? {})
     },
     filters: filters.map((filter) => ({
       label: compactAuditValue(filter.label),
@@ -472,6 +593,7 @@ function filterError(error: Error) {
     EXPORT_FILTER_TO_INVALID: "종료일 형식이 올바르지 않습니다.",
     EXPORT_FILTER_TYPE_INVALID: "입출고 구분이 올바르지 않습니다.",
     EXPORT_FILTER_STATUS_INVALID: "재고 상태가 올바르지 않습니다.",
+    EXPORT_FILTER_WAREHOUSE_INVALID: "창고 구분이 올바르지 않습니다.",
     EXPORT_FILTER_DATE_RANGE_INVALID: "종료일은 시작일과 같거나 이후여야 합니다."
   };
 

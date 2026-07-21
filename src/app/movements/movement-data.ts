@@ -8,6 +8,11 @@ import {
   type StockMovementKind,
   type StockMovementLabel
 } from "@/domain/stock-movement-presentation";
+import {
+  warehouseLabel,
+  type WarehouseKind,
+  type WarehouseLabel
+} from "@/domain/warehouse";
 import { findAllergen, formatDate, movements } from "../reagent-data";
 import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
 
@@ -19,11 +24,17 @@ export type MovementRow = {
   allergenCode: string;
   lotNo: string;
   quantity: number;
+  warehouse: WarehouseLabel;
+  destinationWarehouse: WarehouseLabel | null;
   memo: string;
   source: "database" | "sample";
 };
 
-function sampleMovementRows(q = "", type?: StockMovementKind): MovementRow[] {
+function sampleMovementRows(
+  q = "",
+  type?: StockMovementKind,
+  warehouse?: WarehouseKind
+): MovementRow[] {
   const query = q.trim().toLocaleLowerCase("ko-KR");
   const typeLabel = type ? stockMovementTypeLabel(type) : undefined;
 
@@ -38,11 +49,20 @@ function sampleMovementRows(q = "", type?: StockMovementKind): MovementRow[] {
       allergenCode: allergen?.code ?? "-",
       lotNo: movement.lotNo,
       quantity: movement.quantity,
+      warehouse: warehouseLabel(movement.warehouse ?? "FINISHED_GOODS"),
+      destinationWarehouse: movement.destinationWarehouse
+        ? warehouseLabel(movement.destinationWarehouse)
+        : null,
       memo: movement.memo,
       source: "sample" as const
     };
   }).filter((movement) => {
     if (typeLabel && movement.type !== typeLabel) return false;
+    if (
+      warehouse &&
+      movement.warehouse !== warehouseLabel(warehouse) &&
+      movement.destinationWarehouse !== warehouseLabel(warehouse)
+    ) return false;
     if (!query) return true;
 
     return [
@@ -57,10 +77,11 @@ function sampleMovementRows(q = "", type?: StockMovementKind): MovementRow[] {
 export async function getMovementRows(
   page: number,
   q = "",
-  type?: StockMovementKind
+  type?: StockMovementKind,
+  warehouse?: WarehouseKind
 ): Promise<PaginatedResult<MovementRow>> {
   try {
-    const where = buildMovementWhere({ q, type });
+    const where = buildMovementWhere({ q, type, warehouse });
     const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
     const movementQuery = {
       where,
@@ -69,6 +90,8 @@ export async function getMovementRows(
         createdAt: true,
         type: true,
         quantity: true,
+        warehouse: true,
+        destinationWarehouse: true,
         reason: true,
         reagentLot: {
           select: {
@@ -104,6 +127,10 @@ export async function getMovementRows(
       allergenCode: movement.reagentLot.allergen.code,
       lotNo: movement.reagentLot.lotNo,
       quantity: movement.quantity,
+      warehouse: warehouseLabel(movement.warehouse),
+      destinationWarehouse: movement.destinationWarehouse
+        ? warehouseLabel(movement.destinationWarehouse)
+        : null,
       memo: movement.reason ?? "-",
       source: "database"
     })) };
@@ -111,7 +138,7 @@ export async function getMovementRows(
     return handleDataSourceError(
       "movements",
       error,
-      () => paginateRows(sampleMovementRows(q, type), page)
+      () => paginateRows(sampleMovementRows(q, type, warehouse), page)
     );
   }
 }

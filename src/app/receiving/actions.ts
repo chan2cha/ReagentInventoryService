@@ -5,6 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { requireRole } from "@/lib/auth";
+import { isWarehouseKind } from "@/domain/warehouse";
 import { redirectWithFlash } from "@/lib/flash-message";
 import { formString } from "@/lib/form-data";
 import { prisma } from "@/lib/prisma";
@@ -23,6 +24,7 @@ export async function createReceivingLot(formData: FormData) {
   const quantityRaw = formString(formData, "quantity");
   const receivedDateRaw = formString(formData, "receivedDate");
   const expirationDateRaw = formString(formData, "expirationDate");
+  const warehouseRaw = formString(formData, "warehouse") || "FINISHED_GOODS";
   const memo = formString(formData, "memo");
   const quantity = Number.parseInt(quantityRaw, 10);
 
@@ -40,6 +42,10 @@ export async function createReceivingLot(formData: FormData) {
 
   if (!receivedDateRaw || !expirationDateRaw) {
     await fail("입고일과 유통기한을 입력하세요.");
+  }
+
+  if (!isWarehouseKind(warehouseRaw)) {
+    return fail("입고 창고를 다시 선택하세요.");
   }
 
   const receivedDate = formDate(receivedDateRaw);
@@ -88,9 +94,16 @@ export async function createReceivingLot(formData: FormData) {
           receivedDate,
           expirationDate,
           initialQuantity: quantity,
-          currentQuantity: quantity,
           memo: memo || null,
           isActive: true
+        }
+      });
+
+      await tx.warehouseStock.create({
+        data: {
+          reagentLotId: lot.id,
+          warehouse: warehouseRaw,
+          quantity
         }
       });
 
@@ -99,6 +112,8 @@ export async function createReceivingLot(formData: FormData) {
           reagentLotId: lot.id,
           type: "IN",
           quantity,
+          warehouse: warehouseRaw,
+          destinationWarehouse: null,
           reason: memo || "입고 등록",
           refType: "RECEIVING",
           refId: lot.id,
@@ -127,5 +142,7 @@ export async function createReceivingLot(formData: FormData) {
   revalidatePath("/lots");
   revalidatePath("/movements");
   revalidatePath("/receiving");
+  revalidatePath("/shipments");
+  revalidatePath("/replacements");
   redirect("/lots");
 }

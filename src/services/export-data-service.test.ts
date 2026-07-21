@@ -8,7 +8,8 @@ import {
   EXPORT_ROW_LIMIT,
   ExportRowLimitExceededError,
   listLotExportRows,
-  listMovementExportRows
+  listMovementExportRows,
+  listOrderExportRows
 } from "./export-data-service";
 
 function dbMock(delegates: Record<string, unknown>) {
@@ -17,19 +18,22 @@ function dbMock(delegates: Record<string, unknown>) {
 
 function lotRecord(overrides: Record<string, unknown> = {}) {
   return {
-    id: "lot-1",
-    lotNo: "LOT-EGG-001",
-    receivedDate: new Date("2026-01-10T00:00:00.000Z"),
-    expirationDate: new Date("2026-08-20T00:00:00.000Z"),
-    initialQuantity: 10,
-    currentQuantity: 2,
-    memo: "냉장 보관",
-    isActive: true,
-    allergen: {
-      code: "EGG-01",
-      name: "난백",
-      category: "식품성",
-      minStock: 5
+    warehouse: "FINISHED_GOODS",
+    quantity: 2,
+    reagentLot: {
+      id: "lot-1",
+      lotNo: "LOT-EGG-001",
+      receivedDate: new Date("2026-01-10T00:00:00.000Z"),
+      expirationDate: new Date("2026-08-20T00:00:00.000Z"),
+      initialQuantity: 10,
+      memo: "냉장 보관",
+      isActive: true,
+      allergen: {
+        code: "EGG-01",
+        name: "난백",
+        category: "식품성",
+        minStock: 5
+      }
     },
     ...overrides
   };
@@ -41,6 +45,8 @@ function movementRecord(overrides: Record<string, unknown> = {}) {
     createdAt: new Date("2026-07-13T01:23:45.000Z"),
     type: "OUT",
     quantity: 7,
+    warehouse: "FINISHED_GOODS",
+    destinationWarehouse: null,
     reason: "ORD-20260713-001",
     refType: "SHIPMENT",
     refId: "shipment-1",
@@ -59,35 +65,62 @@ function movementRecord(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function orderItemRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "item-1",
+    quantity: 3,
+    allergen: {
+      code: "EGG-01",
+      name: "난백"
+    },
+    order: {
+      id: "order-1",
+      createdAt: new Date("2026-07-21T01:30:00.000Z"),
+      orderNo: "ORD-20260721-001",
+      status: "CANCELLED",
+      memo: "=HYPERLINK(\"bad\")",
+      client: {
+        name: "서울병원",
+        managerName: "김담당"
+      },
+      creator: {
+        name: "주문 담당자"
+      },
+      image: { id: "image-1" }
+    },
+    ...overrides
+  };
+}
+
 describe("export data service", () => {
   it("loads lean, stable LOT rows and computes their snapshot status", async () => {
     const findMany = vi.fn().mockResolvedValue([lotRecord()]);
-    const db = dbMock({ reagentLot: { findMany } });
+    const db = dbMock({ warehouseStock: { findMany } });
 
     const rows = await listLotExportRows(db, {
       q: " EGG ",
+      warehouse: "FINISHED_GOODS",
       now: new Date("2026-07-13T03:00:00.000Z")
     });
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
       take: EXPORT_QUERY_TAKE,
       orderBy: [
-        { expirationDate: "asc" },
-        { lotNo: "asc" },
-        { id: "asc" }
+        { reagentLot: { expirationDate: "asc" } },
+        { reagentLot: { lotNo: "asc" } },
+        { warehouse: "asc" },
+        { reagentLotId: "asc" }
       ],
-      where: expect.objectContaining({ OR: expect.any(Array) }),
+      where: expect.objectContaining({ AND: expect.any(Array) }),
       select: expect.objectContaining({
-        lotNo: true,
-        currentQuantity: true,
-        allergen: {
-          select: {
-            code: true,
-            name: true,
-            category: true,
-            minStock: true
-          }
-        }
+        warehouse: true,
+        quantity: true,
+        reagentLot: expect.objectContaining({
+          select: expect.objectContaining({
+            lotNo: true,
+            allergen: expect.any(Object)
+          })
+        })
       })
     }));
     expect(rows).toEqual([{
@@ -97,6 +130,7 @@ describe("export data service", () => {
       lotNo: "LOT-EGG-001",
       receivedDate: new Date("2026-01-10T00:00:00.000Z"),
       expirationDate: new Date("2026-08-20T00:00:00.000Z"),
+      warehouse: "FINISHED_GOODS",
       initialQuantity: 10,
       currentQuantity: 2,
       minStock: 5,
@@ -110,23 +144,25 @@ describe("export data service", () => {
     const findMany = vi.fn();
     const queryRaw = vi.fn().mockResolvedValue([{
       id: "lot-1",
+      warehouse: "FINISHED_GOODS",
       lotNo: "LOT-EGG-001",
       receivedDate: new Date("2026-01-10T00:00:00.000Z"),
       expirationDate: new Date("2026-08-20T00:00:00.000Z"),
       initialQuantity: 10,
       currentQuantity: 2,
-      memo: "?됱옣 蹂닿?",
+      memo: "냉장 보관",
       isActive: true,
       allergenCode: "EGG-01",
-      allergenName: "?쒕갚",
+      allergenName: "난백",
       allergenCategory: "food",
       minStock: 5
     }]);
-    const db = dbMock({ $queryRaw: queryRaw, reagentLot: { findMany } });
+    const db = dbMock({ $queryRaw: queryRaw, warehouseStock: { findMany } });
 
     const rows = await listLotExportRows(db, {
       q: "EGG",
       status: "LOW_STOCK",
+      warehouse: "FINISHED_GOODS",
       now: new Date("2026-07-13T03:00:00.000Z")
     });
 
@@ -135,6 +171,7 @@ describe("export data service", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       lotNo: "LOT-EGG-001",
+      warehouse: "FINISHED_GOODS",
       status: "재고부족"
     });
   });
@@ -147,6 +184,15 @@ describe("export data service", () => {
         type: "REVERSE",
         quantity: 7,
         refType: "SHIPMENT_CANCEL"
+      }),
+      movementRecord({
+        id: "movement-3",
+        type: "TRANSFER",
+        quantity: 2,
+        warehouse: "RETURNED",
+        destinationWarehouse: "NONCONFORMING",
+        refType: "WAREHOUSE_TRANSFER",
+        refId: null
       })
     ]);
     const shipmentFindMany = vi.fn().mockResolvedValue([{
@@ -166,7 +212,8 @@ describe("export data service", () => {
     const rows = await listMovementExportRows(db, {
       from: "2026-07-13",
       to: "2026-07-13",
-      type: "OUT"
+      type: "OUT",
+      warehouse: "FINISHED_GOODS"
     });
 
     expect(stockMovementFindMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -177,6 +224,12 @@ describe("export data service", () => {
       ],
       where: {
         type: "OUT",
+        AND: [{
+          OR: [
+            { warehouse: "FINISHED_GOODS" },
+            { destinationWarehouse: "FINISHED_GOODS" }
+          ]
+        }],
         createdAt: {
           gte: new Date("2026-07-12T15:00:00.000Z"),
           lt: new Date("2026-07-13T15:00:00.000Z")
@@ -193,7 +246,9 @@ describe("export data service", () => {
       delta: row.deltaQuantity,
       orderNo: row.orderNo,
       clientName: row.clientName,
-      actorName: row.actorName
+      actorName: row.actorName,
+      warehouse: row.warehouse,
+      destinationWarehouse: row.destinationWarehouse
     }))).toEqual([
       {
         type: "OUT",
@@ -202,7 +257,9 @@ describe("export data service", () => {
         delta: -7,
         orderNo: "ORD-20260713-001",
         clientName: "서울병원",
-        actorName: "출고 담당자"
+        actorName: "출고 담당자",
+        warehouse: "FINISHED_GOODS",
+        destinationWarehouse: null
       },
       {
         type: "REVERSE",
@@ -211,18 +268,89 @@ describe("export data service", () => {
         delta: 7,
         orderNo: "ORD-20260713-001",
         clientName: "서울병원",
-        actorName: "출고 담당자"
+        actorName: "출고 담당자",
+        warehouse: "FINISHED_GOODS",
+        destinationWarehouse: null
+      },
+      {
+        type: "TRANSFER",
+        label: "창고이동",
+        raw: 2,
+        delta: 0,
+        orderNo: null,
+        clientName: null,
+        actorName: "출고 담당자",
+        warehouse: "RETURNED",
+        destinationWarehouse: "NONCONFORMING"
       }
     ]);
   });
 
+  it("exports every item of matched orders using a lean relation select and KST dates", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      orderItemRecord(),
+      orderItemRecord({
+        id: "item-2",
+        quantity: 1,
+        allergen: { code: "MILK-01", name: "우유" }
+      })
+    ]);
+    const db = dbMock({ orderItem: { findMany } });
+
+    const rows = await listOrderExportRows(db, {
+      q: " 서울 ",
+      from: "2026-07-21",
+      to: "2026-07-21"
+    });
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      take: EXPORT_QUERY_TAKE,
+      orderBy: [
+        { order: { createdAt: "desc" } },
+        { order: { id: "desc" } },
+        { id: "asc" }
+      ],
+      where: {
+        order: {
+          is: expect.objectContaining({
+            OR: expect.any(Array),
+            createdAt: {
+              gte: new Date("2026-07-20T15:00:00.000Z"),
+              lt: new Date("2026-07-21T15:00:00.000Z")
+            }
+          })
+        }
+      }
+    }));
+    const select = findMany.mock.calls[0][0].select;
+    expect(select.order.select.image.select).toEqual({ id: true });
+    expect(select.order.select.image.select).not.toHaveProperty("data");
+    expect(select.order.select.client.select).toEqual({ name: true, managerName: true });
+    expect(rows).toEqual([
+      expect.objectContaining({
+        orderId: "order-1",
+        orderNo: "ORD-20260721-001",
+        status: "취소",
+        allergenCode: "EGG-01",
+        quantity: 3,
+        hasImage: true
+      }),
+      expect.objectContaining({ allergenCode: "MILK-01", quantity: 1 })
+    ]);
+  });
+
   it.each([
-    ["lots", "reagentLot"],
-    ["movements", "stockMovement"]
+    ["lots", "warehouseStock"],
+    ["movements", "stockMovement"],
+    ["orders", "orderItem"]
   ] as const)("rejects %s exports above the sheet row limit", async (dataset, delegateName) => {
     const findMany = vi.fn().mockResolvedValue(
       Array.from({ length: EXPORT_ROW_LIMIT + 1 }, () => (
-        dataset === "lots" ? lotRecord() : movementRecord({ refType: null, refId: null })
+        dataset === "lots"
+          ? lotRecord()
+          : dataset === "movements"
+            ? movementRecord({ refType: null, refId: null })
+            : orderItemRecord()
       ))
     );
     const db = dbMock({
@@ -232,7 +360,9 @@ describe("export data service", () => {
 
     const operation = dataset === "lots"
       ? listLotExportRows(db)
-      : listMovementExportRows(db);
+      : dataset === "movements"
+        ? listMovementExportRows(db)
+        : listOrderExportRows(db);
 
     await expect(operation).rejects.toMatchObject({
       name: "ExportRowLimitExceededError",
@@ -246,7 +376,7 @@ describe("export data service", () => {
   it("propagates database errors instead of substituting sample data", async () => {
     const databaseError = new Error("database unavailable");
     const db = dbMock({
-      reagentLot: {
+      warehouseStock: {
         findMany: vi.fn().mockRejectedValue(databaseError)
       }
     });

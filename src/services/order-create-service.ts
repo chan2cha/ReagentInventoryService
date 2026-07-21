@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import type { OrderImageUpload } from "../domain/order-image";
 import { koreaDatePrefix } from "../lib/date";
 import { RetryableTransactionError, runSerializableTransaction } from "../lib/transaction";
 
@@ -11,6 +12,7 @@ type CreateOrderInput = {
   clientId: string;
   memo: string | null;
   items: CreateOrderItem[];
+  image?: OrderImageUpload;
   actorId: string;
   now?: Date;
 };
@@ -103,7 +105,14 @@ export async function createOrderValue(db: PrismaClient, input: CreateOrderInput
             createMany: {
               data: input.items
             }
-          }
+          },
+          ...(input.image
+            ? {
+                image: {
+                  create: input.image
+                }
+              }
+            : {})
         }
       });
 
@@ -112,7 +121,7 @@ export async function createOrderValue(db: PrismaClient, input: CreateOrderInput
           action: "ORDER_CREATE",
           entityType: "ORDER",
           entityId: order.id,
-          description: `${orderNo} 주문 등록 (${input.items.length}개 품목)`,
+          description: `${orderNo} 주문 등록 (${input.items.length}개 품목${input.image ? ", 이미지 첨부" : ""})`,
           actorId: input.actorId
         }
       });

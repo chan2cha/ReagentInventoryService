@@ -127,11 +127,27 @@ export async function processShipment(
         normalized.set(allocation.lotId, (normalized.get(allocation.lotId) ?? 0) + allocation.quantity);
       }
 
-      const selectedLots = await tx.reagentLot.findMany({
-        where: { id: { in: [...normalized.keys()] } },
-        select: { id: true, allergenId: true }
+      const selectedStocks = await tx.warehouseStock.findMany({
+        where: {
+          reagentLotId: { in: [...normalized.keys()] },
+          warehouse: "FINISHED_GOODS",
+          reagentLot: {
+            is: {
+              expirationDate: { gte: today },
+              receivedDate: { lt: tomorrow },
+              isActive: true
+            }
+          }
+        },
+        select: {
+          reagentLotId: true,
+          reagentLot: { select: { allergenId: true } }
+        }
       });
-      const lotById = new Map(selectedLots.map((lot) => [lot.id, lot]));
+      const lotById = new Map(selectedStocks.map((stock) => [
+        stock.reagentLotId,
+        stock.reagentLot
+      ]));
       const allocatedByAllergen = new Map<string, number>();
 
       for (const [lotId, quantity] of normalized) {
@@ -151,22 +167,35 @@ export async function processShipment(
     } else {
       for (const item of requestedByAllergen.values()) {
         let remaining = item.quantity;
-        const candidateLots = await tx.reagentLot.findMany({
+        const candidateStocks = await tx.warehouseStock.findMany({
           where: {
-            allergenId: item.allergenId,
-            currentQuantity: { gt: 0 },
-            expirationDate: { gte: today },
-            receivedDate: { lt: tomorrow },
-            isActive: true
+            warehouse: "FINISHED_GOODS",
+            quantity: { gt: 0 },
+            reagentLot: {
+              is: {
+                allergenId: item.allergenId,
+                expirationDate: { gte: today },
+                receivedDate: { lt: tomorrow },
+                isActive: true
+              }
+            }
           },
-          orderBy: [{ expirationDate: "asc" }, { lotNo: "asc" }]
+          include: { reagentLot: true },
+          orderBy: [
+            { reagentLot: { expirationDate: "asc" } },
+            { reagentLot: { lotNo: "asc" } }
+          ]
         });
 
-        for (const lot of candidateLots) {
+        for (const stock of candidateStocks) {
           if (remaining <= 0) break;
-          const quantity = Math.min(lot.currentQuantity, remaining);
+          const quantity = Math.min(stock.quantity, remaining);
           remaining -= quantity;
-          allocations.push({ allergenId: item.allergenId, lotId: lot.id, quantity });
+          allocations.push({
+            allergenId: item.allergenId,
+            lotId: stock.reagentLotId,
+            quantity
+          });
         }
 
         if (remaining > 0) throw new Error(`INSUFFICIENT_STOCK:${item.allergenCode}`);
@@ -174,22 +203,23 @@ export async function processShipment(
     }
 
     for (const allocation of allocations) {
-      const deduction = await tx.reagentLot.updateMany({
+      const deduction = await tx.warehouseStock.updateMany({
         where: {
-          id: allocation.lotId,
-          currentQuantity: {
+          reagentLotId: allocation.lotId,
+          warehouse: "FINISHED_GOODS",
+          quantity: {
             gte: allocation.quantity
           },
-          expirationDate: {
-            gte: today
-          },
-          receivedDate: {
-            lt: tomorrow
-          },
-          isActive: true
+          reagentLot: {
+            is: {
+              expirationDate: { gte: today },
+              receivedDate: { lt: tomorrow },
+              isActive: true
+            }
+          }
         },
         data: {
-          currentQuantity: {
+          quantity: {
             decrement: allocation.quantity
           }
         }
@@ -223,6 +253,7 @@ export async function processShipment(
         reagentLotId: allocation.lotId,
         type: "OUT" as const,
         quantity: allocation.quantity,
+        warehouse: "FINISHED_GOODS" as const,
         reason: order.orderNo,
         refType: "SHIPMENT",
         refId: shipment.id,
@@ -293,12 +324,15 @@ export async function reverseShipment(
     }
 
     for (const item of shipment.items) {
-      await tx.reagentLot.update({
+      await tx.warehouseStock.update({
         where: {
-          id: item.reagentLotId
+          reagentLotId_warehouse: {
+            reagentLotId: item.reagentLotId,
+            warehouse: "FINISHED_GOODS"
+          }
         },
         data: {
-          currentQuantity: {
+          quantity: {
             increment: item.quantity
           }
         }
@@ -311,6 +345,7 @@ export async function reverseShipment(
         reagentLotId: item.reagentLotId,
         type: "REVERSE" as const,
         quantity: item.quantity,
+        warehouse: "FINISHED_GOODS" as const,
         reason: `${shipment.order.orderNo} 출고 취소: ${reason}`,
         refType: "SHIPMENT_CANCEL",
         refId: shipment.id,

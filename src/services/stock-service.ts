@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, Warehouse } from "@prisma/client";
 import type { StockAdjustmentType } from "../domain/stock-adjustment";
 import { RetryableTransactionError, runSerializableTransaction } from "../lib/transaction";
 
@@ -8,6 +8,7 @@ type AdjustLotStockInput = {
   type: StockAdjustmentType;
   reason: string;
   actorId: string;
+  warehouse?: Warehouse;
 };
 
 export async function adjustLotStockValue(db: PrismaClient, input: AdjustLotStockInput) {
@@ -16,47 +17,57 @@ export async function adjustLotStockValue(db: PrismaClient, input: AdjustLotStoc
   }
 
   return runSerializableTransaction(db, async (tx) => {
+    const warehouse = input.warehouse ?? "FINISHED_GOODS";
     const amount = Math.abs(input.quantity);
     const result = input.quantity > 0
-      ? await tx.reagentLot.updateMany({
+      ? await tx.warehouseStock.updateMany({
           where: {
-            id: input.lotId
+            reagentLotId: input.lotId,
+            warehouse
           },
           data: {
-            currentQuantity: {
+            quantity: {
               increment: amount
             }
           }
         })
-      : await tx.reagentLot.updateMany({
+      : await tx.warehouseStock.updateMany({
           where: {
-            id: input.lotId,
-            currentQuantity: {
+            reagentLotId: input.lotId,
+            warehouse,
+            quantity: {
               gte: amount
             }
           },
           data: {
-            currentQuantity: {
+            quantity: {
               decrement: amount
             }
           }
         });
 
     if (result.count !== 1) {
-      const lot = await tx.reagentLot.findUnique({
+      const stock = await tx.warehouseStock.findUnique({
         where: {
-          id: input.lotId
+          reagentLotId_warehouse: {
+            reagentLotId: input.lotId,
+            warehouse
+          }
         },
         select: {
-          currentQuantity: true
+          quantity: true
         }
       });
 
-      if (!lot) {
-        throw new Error("LOT_NOT_FOUND");
+      if (!stock) {
+        const lot = await tx.reagentLot.findUnique({
+          where: { id: input.lotId },
+          select: { id: true }
+        });
+        throw new Error(lot ? "WAREHOUSE_STOCK_NOT_FOUND" : "LOT_NOT_FOUND");
       }
 
-      if (input.quantity < 0 && lot.currentQuantity < amount) {
+      if (input.quantity < 0 && stock.quantity < amount) {
         throw new Error("ADJUSTMENT_STOCK_NEGATIVE");
       }
 
@@ -68,6 +79,7 @@ export async function adjustLotStockValue(db: PrismaClient, input: AdjustLotStoc
         reagentLotId: input.lotId,
         type: input.type,
         quantity: input.quantity,
+        warehouse,
         reason: input.reason,
         refType: "STOCK_ADJUSTMENT",
         refId: input.lotId,
@@ -77,7 +89,8 @@ export async function adjustLotStockValue(db: PrismaClient, input: AdjustLotStoc
 
     return {
       lotId: input.lotId,
-      quantity: input.quantity
+      quantity: input.quantity,
+      warehouse
     };
   });
 }

@@ -7,13 +7,14 @@
 ## 주요 기능
 
 - 시약·거래처·사용자 기준정보 관리
-- 제조번호와 유통기한별 LOT 입고 및 재고 현황 조회
+- 제조번호·유통기한·창고별 LOT 입고 및 재고 현황 조회
+- 완제품·검체·반품·부적합·폐기 5개 창고와 부분 수량 창고 이동
 - 시약별 안전재고, 품절, 유통기한 임박·만료 상태 표시
-- 여러 품목 주문과 재사용 가능한 주문 세트 관리
+- 거래처·시약 검색 선택, 선택 이미지 첨부를 포함한 여러 품목 주문 등록·취소 및 상태 관리
 - FEFO 기반 LOT 추천·출고 및 출고 취소 시 재고 복구
 - 재고 추가·차감·폐기와 모든 입출고 이력 추적
 - 유통기한 임박 출고품의 선제 교환 후보·정책·처리 이력 관리
-- 검색·필터 조건을 반영한 재고/입출고 Excel 내보내기
+- 검색·기간·필터 조건을 반영한 재고/입출고/주문내역 Excel 내보내기
 - 서명된 httpOnly 세션, 역할별 권한, 비밀번호 변경·세션 무효화
 - 관리자용 중요 작업 감사 로그
 - 한국 표준시(KST) 기준 업무 날짜와 페이지 단위 목록 조회
@@ -35,8 +36,8 @@
 | 역할 | 주요 권한 |
 |---|---|
 | <code>ADMIN</code> | 모든 조회·업무 처리, 기준정보·사용자·감사 로그·교환 정책 관리 |
-| <code>ORDER_MANAGER</code> | 주문 등록·취소, 주문 세트 관리, 자료 내보내기 |
-| <code>SHIPMENT_MANAGER</code> | 입고, 출고·취소, 재고 조정, 선제 교환, 자료 내보내기 |
+| <code>ORDER_MANAGER</code> | 주문 등록·취소, 자료 내보내기 |
+| <code>SHIPMENT_MANAGER</code> | 입고, 출고·취소, 창고별 재고 조정·이동, 선제 교환, 자료 내보내기 |
 | <code>VIEWER</code> | 운영 데이터 조회만 가능 |
 
 서버 액션과 API는 화면에 버튼이 보이는지와 별개로 인증·강제 비밀번호 변경·업무 권한을 다시 검사합니다.
@@ -136,10 +137,11 @@ URL과 대상 문자열은 예시를 그대로 쓰지 말고 같은 비운영 DB
 일반적인 변경 검증 순서는 다음과 같습니다.
 
 ~~~powershell
+npm run prisma:validate
+npm run prisma:generate
 npm run typecheck
 npm run lint
 npm test
-npm run prisma:validate
 npm run build
 ~~~
 
@@ -201,7 +203,7 @@ npm run test:integration
 |---|---|
 | <code>docs/00_project_overview.md</code> | 프로젝트 배경, 목표, 사용자, 기술 방향과 핵심 설계 원칙을 설명합니다. |
 | <code>docs/01_requirements.md</code> | 로그인·권한, 시약·LOT·거래처·주문·출고·이력·Excel과 비기능 요구사항을 정의합니다. |
-| <code>docs/02_business_workflow.md</code> | 주문, 주문 세트, FEFO 출고, 입고, 재고 조정, 취소와 내보내기의 상태·예외 흐름을 설명합니다. |
+| <code>docs/02_business_workflow.md</code> | 주문, FEFO 출고, 입고, 재고 조정, 취소와 내보내기의 상태·예외 흐름을 설명합니다. |
 | <code>docs/03_data_model.md</code> | 주요 엔티티, 상태값, 관계, 제약조건과 인덱스를 정리한 논리 데이터 모델입니다. |
 | <code>docs/04_mvp_roadmap.md</code> | 단계별 MVP 범위, 포함·제외 기능, 완료 기준과 우선 개발 화면을 정리합니다. |
 | <code>docs/05_deployment_operations.md</code> | 운영 환경, 배포 흐름, 환경 변수, 배포 전 검증, 백업과 장애 대응 방식을 설명합니다. |
@@ -218,15 +220,18 @@ npm run test:integration
 
 | 파일 | 역할 |
 |---|---|
-| <code>prisma/schema.prisma</code> | PostgreSQL 연결, 열거형과 사용자·감사·시약·LOT·거래처·주문·세트·출고·교환·이동 모델을 정의하는 기준 스키마입니다. |
+| <code>prisma/schema.prisma</code> | PostgreSQL 연결, 열거형과 사용자·감사·시약·LOT·거래처·주문·출고·교환·이동 모델을 정의하는 기준 스키마입니다. |
 | <code>prisma/seed.js</code> | 안전장치 아래 샘플 기준정보·업무 데이터·관리자를 만들고 과거 관리자 교체 모드도 제공합니다. |
 | <code>prisma/migrations/migration_lock.toml</code> | 마이그레이션 데이터베이스 공급자를 PostgreSQL로 고정하는 Prisma 관리 파일입니다. |
 | <code>prisma/migrations/20260710000000_baseline/migration.sql</code> | 핵심 열거형·테이블·인덱스·외래키를 만드는 초기 기준 스키마입니다. |
 | <code>prisma/migrations/20260712000000_enforce_inventory_invariants/migration.sql</code> | 기존 데이터 사전 검증 후 재고 수량·날짜 제약과 유일성·조회 인덱스를 강화합니다. |
-| <code>prisma/migrations/20260712150000_add_order_templates/migration.sql</code> | 재사용 가능한 주문 세트와 품목 테이블, 제약·관계·인덱스를 추가합니다. |
+| <code>prisma/migrations/20260712150000_add_order_templates/migration.sql</code> | 재사용 가능한 주문 세트와 품목 테이블, 제약·관계·인덱스를 추가한 이력입니다. |
 | <code>prisma/migrations/20260713100000_add_user_session_version/migration.sql</code> | 비밀번호 변경·계정 비활성화 때 기존 세션을 무효화할 <code>User.sessionVersion</code>을 추가합니다. |
 | <code>prisma/migrations/20260713110000_add_proactive_replacements/migration.sql</code> | 선제 교환 열거형·테이블, 출고 목적과 관련 제약·인덱스·외래키를 추가합니다. |
 | <code>prisma/migrations/20260713120000_add_replacement_policy/migration.sql</code> | 교환 탐지일과 최소 잔여 유효기간을 보관하는 정책 테이블과 기본값을 추가합니다. |
+| <code>prisma/migrations/20260721150000_remove_order_templates/migration.sql</code> | 더 이상 사용하지 않는 주문 세트 품목과 본문 테이블을 제거합니다. |
+| <code>prisma/migrations/20260721160000_add_transfer_movement_type/migration.sql</code> | PostgreSQL 커밋 경계를 지켜 <code>StockMovementType.TRANSFER</code>를 선행 추가합니다. |
+| <code>prisma/migrations/20260721161000_add_warehouse_inventory/migration.sql</code> | 기존 현재고를 완제품 창고로 이관하고 <code>WarehouseStock</code> 단일 수량 원천과 이동 제약·인덱스를 적용합니다. |
 
 ## <code>src/app/</code> 공통 파일
 
@@ -279,8 +284,7 @@ npm run test:integration
 | <code>src/app/lots/</code> | LOT별 재고 조회·필터·조정입니다. |
 | <code>src/app/movements/</code> | 입고·출고·조정·폐기·복구 이력 조회입니다. |
 | <code>src/app/orders/</code> | 주문 목록·취소와 주문 하위 업무를 묶습니다. |
-| <code>src/app/orders/new/</code> | 수동 입력 또는 주문 세트를 이용한 신규 주문 작성입니다. |
-| <code>src/app/orders/templates/</code> | 반복 주문용 주문 세트 관리입니다. |
+| <code>src/app/orders/new/</code> | 여러 시약과 수량을 직접 입력하는 신규 주문 작성입니다. |
 | <code>src/app/receiving/</code> | 신규 LOT 입고 등록입니다. |
 | <code>src/app/replacements/</code> | 유통기한 임박 출고품의 선제 교환 관리입니다. |
 | <code>src/app/shipments/</code> | 출고 대기, LOT 배정, 출고와 출고 취소입니다. |
@@ -308,7 +312,7 @@ npm run test:integration
 | 파일 | 역할 |
 |---|---|
 | <code>src/app/api/exports/route.test.ts</code> | 내보내기 인증·권한·필터·시트·행/파일/문자 제한과 감사 실패 처리를 검증합니다. |
-| <code>src/app/api/exports/route.ts</code> | <code>GET /api/exports</code> 요청으로 재고·이동·통합 XLSX를 만들고 감사 로그를 기록합니다. |
+| <code>src/app/api/exports/route.ts</code> | <code>GET /api/exports</code> 요청으로 재고·이동·주문·통합 XLSX를 만들고 감사 로그를 기록합니다. |
 | <code>src/app/api/flash/route.ts</code> | <code>DELETE /api/flash</code> 요청으로 일회성 플래시 쿠키를 지웁니다. |
 
 ### 감사 로그
@@ -348,20 +352,21 @@ npm run test:integration
 
 | 파일 | 역할 |
 |---|---|
-| <code>src/app/lots/actions.ts</code> | LOT 재고 추가·차감·폐기를 검증하고 이동 이력과 함께 처리합니다. |
+| <code>src/app/lots/actions.ts</code> | 창고별 LOT 재고 추가·차감·폐기와 부분 창고 이동을 검증하고 이력과 함께 처리합니다. |
 | <code>src/app/lots/lot-data.test.ts</code> | 안전재고 교차 비교가 필요한 상태 필터의 DB 조회·페이지 계산을 검증합니다. |
-| <code>src/app/lots/lot-data.ts</code> | LOT 검색·상태 필터·페이지 조회와 유통기한·안전재고 상태 계산을 수행합니다. |
-| <code>src/app/lots/lot-table-filters.tsx</code> | LOT 검색어와 정상·부족·품절·임박·만료 필터를 구성합니다. |
-| <code>src/app/lots/page.tsx</code> | <code>/lots</code> LOT 현황, 재고 조정과 현재 조건 내보내기를 제공합니다. |
-| <code>src/app/lots/stock-adjustment-dialog.tsx</code> | 추가·차감·폐기 수량·사유와 변경 후 재고를 미리 보여주는 다이얼로그입니다. |
+| <code>src/app/lots/lot-data.ts</code> | <code>WarehouseStock</code> 기준 LOT·창고 검색, 상태 필터, 페이지 조회와 유통기한·안전재고 상태 계산을 수행합니다. |
+| <code>src/app/lots/lot-table-filters.tsx</code> | LOT 검색어와 창고 및 정상·부족·품절·임박·만료 필터를 구성합니다. |
+| <code>src/app/lots/page.tsx</code> | <code>/lots</code> 창고별 LOT 현황, 단일 재고 관리 버튼과 현재 조건 내보내기를 제공합니다. |
+| <code>src/app/lots/inventory-management-dialog.tsx</code> | 한 다이얼로그에서 추가·차감·폐기 재고 조정과 부분 창고 이동을 전환하고 처리 전 수량을 확인합니다. |
+| <code>src/app/lots/inventory-management-dialog.test.tsx</code> | 단일 버튼·단일 다이얼로그와 0재고일 때의 이동 제한을 검증합니다. |
 
 ### 입출고 이력
 
 | 파일 | 역할 |
 |---|---|
 | <code>src/app/movements/movement-data.test.ts</code> | 검색어와 이동 유형이 건수·목록 쿼리에 똑같이 적용되는지 검증합니다. |
-| <code>src/app/movements/movement-data.ts</code> | 재고 이동을 검색·유형 필터·페이지 조회하고 화면 표시값으로 변환합니다. |
-| <code>src/app/movements/movement-table-filters.tsx</code> | 이동 검색어와 입고·출고·조정·폐기·복구 유형 필터를 구성합니다. |
+| <code>src/app/movements/movement-data.ts</code> | 재고 이동을 검색·유형·창고 필터·페이지 조회하고 출발·도착 창고 표시값으로 변환합니다. |
+| <code>src/app/movements/movement-table-filters.tsx</code> | 이동 검색어와 입고·출고·조정·폐기·복구·창고이동 유형 및 창고 필터를 구성합니다. |
 | <code>src/app/movements/page.tsx</code> | <code>/movements</code> 재고 이동 이력과 조건별 내보내기를 제공합니다. |
 
 ### 주문
@@ -369,36 +374,27 @@ npm run test:integration
 | 파일 | 역할 |
 |---|---|
 | <code>src/app/orders/actions.ts</code> | 권한·취소 사유를 검증해 출고 전 주문을 취소합니다. |
-| <code>src/app/orders/order-data.ts</code> | 주문 번호·거래처·시약·메모로 주문을 검색하고 품목·상태를 페이지 조회합니다. |
-| <code>src/app/orders/page.tsx</code> | <code>/orders</code> 주문 목록, 품목 수량, 신규 주문과 취소 UI입니다. |
+| <code>src/app/orders/order-data.ts</code> | 주문 번호·거래처·시약·메모와 KST 주문일 범위로 주문을 검색하고 품목·상태를 페이지 조회합니다. |
+| <code>src/app/orders/page.tsx</code> | <code>/orders</code> 주문 목록, 기간 검색, 주문내역 Excel, 신규 주문과 취소 UI입니다. |
 
 ### 신규 주문
 
 | 파일 | 역할 |
 |---|---|
-| <code>src/app/orders/new/actions.test.ts</code> | 세트·수동 입력 병합 결과의 서비스 전달과 성공 리다이렉트를 검증합니다. |
-| <code>src/app/orders/new/actions.ts</code> | 반복 주문 품목을 정규화·검증해 주문 생성 서비스로 전달합니다. |
-| <code>src/app/orders/new/order-form-data.test.ts</code> | 활성 세트 변환과 세트 조회 실패 시 수동 주문 유지 동작을 검증합니다. |
-| <code>src/app/orders/new/order-form-data.ts</code> | 활성 거래처·시약·주문 세트를 조회하고 세트 장애를 수동 주문과 분리합니다. |
-| <code>src/app/orders/new/order-form.tsx</code> | 여러 시약·수량 입력과 주문 세트 검색·선택·변경·복원·해제를 지원합니다. |
+| <code>src/app/orders/new/actions.test.ts</code> | 직접 입력한 여러 품목의 서비스 전달과 성공 리다이렉트를 검증합니다. |
+| <code>src/app/orders/new/actions.ts</code> | 여러 주문 품목을 정규화·검증해 주문 생성 서비스로 전달합니다. |
+| <code>src/app/orders/new/order-form-data.test.ts</code> | 활성 거래처·시약 변환과 조회 실패 시 표준 fallback을 검증합니다. |
+| <code>src/app/orders/new/order-form-data.ts</code> | 활성 거래처·시약을 조회해 신규 주문 폼 데이터로 변환합니다. |
+| <code>src/app/orders/new/order-form.tsx</code> | 여러 시약과 수량을 직접 추가·수정·삭제하는 주문 입력을 지원합니다. |
 | <code>src/app/orders/new/page.tsx</code> | <code>/orders/new</code> 권한 검사 후 신규 주문 폼을 표시합니다. |
-
-### 주문 세트
-
-| 파일 | 역할 |
-|---|---|
-| <code>src/app/orders/templates/actions.test.ts</code> | 항목 순서·작성자·버전 충돌·활성 상태 입력 검증을 확인합니다. |
-| <code>src/app/orders/templates/actions.ts</code> | 세트 항목·버전을 검증해 등록·수정·활성 상태 변경을 수행합니다. |
-| <code>src/app/orders/templates/order-template-form.tsx</code> | 이름·설명과 중복 없는 시약별 기본 수량을 편집하는 세트 폼입니다. |
-| <code>src/app/orders/templates/page.tsx</code> | <code>/orders/templates</code> 세트 검색·등록·수정·활성화 화면입니다. |
 
 ### 입고
 
 | 파일 | 역할 |
 |---|---|
-| <code>src/app/receiving/actions.ts</code> | 입고 값과 중복 LOT를 검증해 LOT와 입고 이동을 한 트랜잭션으로 저장합니다. |
+| <code>src/app/receiving/actions.ts</code> | 입고 값·창고와 중복 LOT를 검증해 LOT, 창고 잔액과 입고 이동을 한 트랜잭션으로 저장합니다. |
 | <code>src/app/receiving/receiving-data.ts</code> | 입고 폼의 활성 시약 목록을 조회하고 개발용 샘플 fallback을 처리합니다. |
-| <code>src/app/receiving/page.tsx</code> | <code>/receiving</code> 시약·LOT·수량·입고일·유통기한 등록 화면입니다. |
+| <code>src/app/receiving/page.tsx</code> | <code>/receiving</code> 시약·LOT·수량·창고·입고일·유통기한 등록 화면입니다. |
 
 ### 선제 교환
 
@@ -415,7 +411,7 @@ npm run test:integration
 | <code>src/app/shipments/actions.ts</code> | 주문별 LOT 배정 수량을 검증해 출고를 확정하거나 취소·재고 복구를 수행합니다. |
 | <code>src/app/shipments/page.tsx</code> | <code>/shipments</code> 출고 대기·추천 LOT·출고 이력과 출고·취소 UI입니다. |
 | <code>src/app/shipments/shipment-allocation-dialog.tsx</code> | FEFO 추천값과 품목별 실제 출고 수량을 확인하는 다이얼로그입니다. |
-| <code>src/app/shipments/shipment-data.ts</code> | 출고 대기 주문, FEFO 추천, 사용 가능 LOT와 출고 이력을 조회합니다. |
+| <code>src/app/shipments/shipment-data.ts</code> | 출고 대기 주문, 완제품 창고의 FEFO 추천·사용 가능 LOT와 출고 이력을 조회합니다. |
 
 ### 사용자 관리
 
@@ -435,20 +431,16 @@ UI와 데이터 영속화 실행에서 분리한 입력 정규화와 핵심 업�
 | <code>src/domain/export-filters.test.ts</code> | 검색 결합, LOT 상태 경계, KST 날짜 범위와 잘못된 필터 거부를 검증합니다. |
 | <code>src/domain/export-filters.ts</code> | 재고·이동 검색어, 상태·유형·한국 날짜를 검증해 Prisma 조건으로 변환합니다. |
 | <code>src/domain/lot-status.ts</code> | 유통기한·현재 수량·안전재고로 LOT 상태와 표시명을 우선순위대로 판정합니다. |
-| <code>src/domain/order-draft.test.ts</code> | 세트 전환·복원·해제, 수동 행 보존, 중복·수량·입력 한계 규칙을 검증합니다. |
-| <code>src/domain/order-draft.ts</code> | 주문 초안의 세트 선택·재적용·해제, 수동 입력 보존과 수정 상태를 관리합니다. |
 | <code>src/domain/order-items.test.ts</code> | 중복 품목 병합과 빈 시약·잘못된 수량 거부를 검증합니다. |
 | <code>src/domain/order-items.ts</code> | 주문 품목의 시약 ID·양의 정수 수량을 검증하고 같은 품목을 합칩니다. |
-| <code>src/domain/order-template-picker.test.ts</code> | 빈 검색, 호환 문자, 공백·대소문자, 설명·품목 검색을 검증합니다. |
-| <code>src/domain/order-template-picker.ts</code> | 세트명·설명·시약 코드/이름을 Unicode 정규화·대소문자 무시 방식으로 검색합니다. |
-| <code>src/domain/order-template.test.ts</code> | 세트 필드의 Unicode·공백 정규화와 길이·중복·수량 제약을 검증합니다. |
-| <code>src/domain/order-template.ts</code> | 세트 이름·설명·순서·품목의 길이, 개수, 중복과 수량을 정규화·검증합니다. |
 | <code>src/domain/pending-shipment.ts</code> | 출고 대기 주문 상태와 공통 Prisma 조회 조건을 정의합니다. |
 | <code>src/domain/stock-adjustment.test.ts</code> | 조정 연산별 부호, 잘못된 숫자와 음수 재고 거부를 검증합니다. |
 | <code>src/domain/stock-adjustment.ts</code> | 추가·차감·폐기를 부호 있는 증감량으로 바꾸고 음수 재고를 막습니다. |
 | <code>src/domain/stock-movement-presentation.test.ts</code> | 모든 이동 유형의 표시명·증감 방향·타입 판별을 검증합니다. |
 | <code>src/domain/stock-movement-presentation.ts</code> | 이동 유형의 화면 표시명과 실제 재고 증감 방향을 제공합니다. |
 | <code>src/domain/stock.test.ts</code> | 유통기한이 빠른 LOT부터 수량을 배정하는 FEFO 예제를 단위 검증합니다. |
+| <code>src/domain/warehouse.test.ts</code> | 고정된 5개 창고 값과 한국어 표시명·타입 판별을 검증합니다. |
+| <code>src/domain/warehouse.ts</code> | 창고 enum 계약, 한국어 표시명과 입력 판별 함수를 제공합니다. |
 
 ## <code>src/lib/</code>
 
@@ -493,18 +485,18 @@ UI와 데이터 영속화 실행에서 분리한 입력 정규화와 핵심 업�
 | <code>src/services/order-create-service.test.ts</code> | 정상 생성, 비활성 기준정보, 주문번호 충돌 재시도와 일일 한계를 검증합니다. |
 | <code>src/services/order-create-service.ts</code> | 활성 기준정보를 확인하고 날짜별 주문번호를 발급해 주문과 감사를 원자 생성합니다. |
 | <code>src/services/order-service.ts</code> | 미출고 주문만 동시성에 안전하게 취소하고 감사 로그를 남깁니다. |
-| <code>src/services/order-template-service.test.ts</code> | 세트 조회·생성·수정, 비활성 품목, 중복 이름, 구버전 편집 제한을 검증합니다. |
-| <code>src/services/order-template-service.ts</code> | 주문 세트 조회·생성·수정·활성화와 품목·버전·이름·감사 규칙을 처리합니다. |
 | <code>src/services/replacement-service.ts</code> | 교환 확정·제외와 정책 기반 FEFO 교환 출고 완료·감사를 처리합니다. |
 | <code>src/services/shipment-service.ts</code> | FEFO/지정 LOT 출고와 재고·이동·감사 생성, 출고 취소·재고 복구를 처리합니다. |
 | <code>src/services/status-filtered-lot-query.ts</code> | 안전재고 교차 비교가 필요한 정상·부족 LOT를 PostgreSQL에서 집계·페이지 조회합니다. |
-| <code>src/services/stock-service.ts</code> | 조건부 재고 증감과 이동 기록을 원자 처리해 음수 재고·동시성 충돌을 막습니다. |
+| <code>src/services/stock-service.ts</code> | 창고 잔액의 조건부 증감과 이동 기록을 원자 처리해 음수 재고·동시성 충돌을 막습니다. |
+| <code>src/services/warehouse-transfer-service.test.ts</code> | 부분 이동, 입력·잔액 오류, 비교·갱신 충돌 재시도와 이력 중복 방지를 검증합니다. |
+| <code>src/services/warehouse-transfer-service.ts</code> | 출발 잔액 차감, 도착 잔액 증가, <code>TRANSFER</code>와 <code>STOCK_TRANSFER</code> 감사를 Serializable 트랜잭션으로 처리합니다. |
 
 ## 테스트 기반
 
 | 파일 | 역할 |
 |---|---|
-| <code>src/integration/database.integration.test.ts</code> | 격리 DB에서 FEFO 출고·취소, 재고 경쟁, 주문 세트·번호, 내보내기와 선제 교환의 실제 트랜잭션을 검증합니다. |
+| <code>src/integration/database.integration.test.ts</code> | 격리 DB에서 완제품 FEFO 출고·취소, 창고 부분 이동·재고 경쟁, 주문번호, 내보내기와 선제 교환의 실제 트랜잭션을 검증합니다. |
 | <code>src/test/setup.ts</code> | 플래시 메시지 모듈을 공통 mock해 쿠키 부작용 없이 서버 동작을 테스트하도록 설정합니다. |
 
 <code>*.test.ts</code>와 <code>*.test.tsx</code>는 외부 서비스 없이 실행하는 단위·정책·컴포넌트 테스트입니다. <code>*.integration.test.ts</code>는 실제 PostgreSQL 트랜잭션을 사용하므로 전용 테스트 DB가 필요합니다.

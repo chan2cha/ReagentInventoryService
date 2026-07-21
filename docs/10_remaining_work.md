@@ -1,6 +1,6 @@
 # Remaining Work and Improvements
 
-Last updated: 2026-07-13
+Last updated: 2026-07-21
 
 ## Priority 1: Authentication and Access Control
 
@@ -42,7 +42,7 @@ Implemented permissions:
 | Role | Permissions |
 |---|---|
 | `ADMIN` | All features |
-| `ORDER_MANAGER` | Register/cancel orders, manage/use reusable order sets, view stock and clients, export data |
+| `ORDER_MANAGER` | Register/cancel orders, view stock and clients, export data |
 | `SHIPMENT_MANAGER` | Process/cancel shipments, receive stock, view stock, export data |
 | `VIEWER` | Read-only access without data export |
 
@@ -76,38 +76,11 @@ Implemented:
 - Creates multiple `OrderItem` records in one transaction.
 - Existing order and shipment summaries already display multiple items.
 
-## Completed: Reusable Order Sets
-
-Current state:
-
-- `/orders/templates` lets `ADMIN` and `ORDER_MANAGER` users manage globally shared order sets without client mappings.
-- A set stores its name, optional description, activation state, ordered reagent rows, and positive integer default quantities.
-- Create, edit, and reactivation reject inactive or missing reagents. If a reagent is deactivated later, the management screen warns about it and order registration blocks that set from application.
-- Edit and activation actions submit an expected `version`; compare-and-swap updates reject stale forms instead of overwriting another user's change.
-- Create, edit, activation, and deactivation write audit entries in the same serializable transaction as the set change.
-- `/orders/new` shows active sets and applies one with a single click while preserving the editable manual order workflow.
-- Applying a set keeps unrelated manual rows, overwrites matching rows with the set's default quantities, and appends only missing rows. Applying it repeatedly is idempotent.
-- One set can be selected as the order's baseline. Its card and persistent summary show `선택됨` or `구성 수정됨` based only on the baseline items, while unrelated manual additions remain independent.
-- Each draft row tracks manual/template provenance. Selection and switching preserve existing manual quantities, switching removes only the previous set's template-only rows, detaching keeps all rows, and explicit default restoration resets only baseline items.
-- Each order row exposes its provenance as a baseline-set item, manual addition, or manual item also included by the selected set so the effect of switching remains visible to the operator.
-- The picker searches names, descriptions, reagent codes, and reagent names; filters to the selected set; and renders six cards at a time with progressive expansion.
-- The order-form query uses a lean projection that excludes management-only creator/updater relations.
-- A template-query failure is isolated from client and reagent loading, so operators can continue entering an order manually.
-
-If the active-set collection grows to hundreds of sets with very large item lists, replace the current immediate client search with cursor-paged summaries and lazy-load item details when a set is selected. The current search, six-card disclosure, and lean projection are intended for the expected operational range while keeping the interaction instant.
-
-Implemented:
-
-- Added `OrderTemplate` and `OrderTemplateItem` through `20260712150000_add_order_templates`.
-- Added management, search, registration, editing, activation, and deactivation UI and Server Actions.
-- Added domain and service validation, active-reagent checks, normalized unique names, version concurrency control, and audit writes.
-- Added order-draft merge logic and unit/integration coverage.
-
 ## Completed: Stock Adjustment
 
 Current state:
 
-- `/lots` supports LOT-level stock adjustment.
+- `/lots` supports LOT-and-warehouse-level stock adjustment.
 - `ADMIN` and `SHIPMENT_MANAGER` users can adjust stock.
 - A row-specific dialog separates add, subtract, and disposal operations and accepts positive quantities only.
 - The dialog previews resulting stock, warns below minimum stock, and blocks negative results.
@@ -121,9 +94,26 @@ Implemented:
 - Added stock adjustment action from `/lots`.
 - Required reason input.
 - Prevented quantity from going below zero.
-- Updated `ReagentLot.currentQuantity`.
+- Updated the selected `WarehouseStock.quantity` balance.
 - Created `StockMovement` with type `ADJUST` or `DISPOSE`.
 - Shows adjustment and disposal records in `/movements`.
+
+## Completed: Warehouse Inventory and Partial Transfer
+
+Current state:
+
+- Five fixed warehouses are supported: finished goods, samples, returns, nonconforming goods, and disposal.
+- `WarehouseStock` keyed by `(reagentLotId, warehouse)` is the single source of mutable inventory quantity; `ReagentLot.currentQuantity` has been removed.
+- `/lots` shows and filters the warehouse column and allows `ADMIN` and `SHIPMENT_MANAGER` to transfer part of a balance with a required reason.
+- Source decrement, destination upsert, one `TRANSFER` movement, and one `STOCK_TRANSFER` audit log are atomic in a retryable Serializable transaction.
+- General and replacement shipment FEFO allocation reads only `FINISHED_GOODS`; cancellation restores that warehouse.
+- Moving stock to `DISPOSAL` preserves total physical quantity. `DISPOSE` remains the distinct operation that removes actually discarded stock.
+- Inventory and movement exports carry warehouse data and accept individual or combined warehouse filters.
+
+Deployment note:
+
+- Apply `20260721160000_add_transfer_movement_type` before `20260721161000_add_warehouse_inventory` in the same write-stopped maintenance window as the matching application release.
+- Take and verify a backup first. The cutover drops `ReagentLot.currentQuantity`, so the old application must not resume after migration.
 
 ## Completed: P0 Inventory and Authentication Guards
 
@@ -167,7 +157,7 @@ Current state:
 - Seed data defines a minimum stock value for each sample reagent.
 - `/lots` marks entries below the reagent threshold as `재고부족`.
 - `/allergens` reads the minimum stock value from the database.
-- The dashboard calculates low-stock entries using `currentQuantity < minStock`.
+- The dashboard calculates low-stock entries from finished-goods `WarehouseStock.quantity < minStock`.
 
 ## Completed: Confirmation and Error UX
 
@@ -194,17 +184,17 @@ Current state:
 
 Current state:
 
-- `/lots` and `/movements` provide `DATA_EXPORT` users a current-condition shortcut that exports all matches rather than the visible page; inventory status and movement type are preserved with each search term through paging and export.
+- `/lots`, `/movements`, and `/orders` provide `DATA_EXPORT` users a current-condition shortcut that exports all matches rather than the visible page; order search and inclusive KST order dates are preserved through paging and export.
 - `/exports` supports separate inventory and movement downloads and a selected combined workbook.
-- Inventory supports a search term and computed stock-status filter. Movement history supports a separate search term, inclusive KST `from`/`to` dates, and movement-type filtering.
-- Workbooks contain an `내보내기정보` sheet and the requested `재고현황` and/or `입출고이력` sheets.
+- Inventory supports a search term, warehouse and computed stock-status filter. Movement history supports a separate search term, source-or-destination warehouse, inclusive KST `from`/`to` dates, and movement-type filtering.
+- Workbooks contain an `내보내기정보` sheet and the requested `재고현황`, `입출고이력`, or 품목별 `주문내역` sheet.
 - Movement sheets keep the raw recorded quantity separate from the calculated inventory delta and identify shipment order/client and actor when available.
 - Each requested data sheet is limited to 10,000 rows and the final XLSX to 4,000,000 bytes.
 - Combined sheets and movement shipment references use one bounded `Repeatable Read` snapshot, and workbook generation runs after the transaction is released.
 - Report-specific parameters, per-cell text length, and aggregate UTF-8 text volume are validated before workbook materialization.
 - Export queries use lean projections, deterministic ordering, and no sample-data fallback.
 - The download API checks authentication, required password change, and `DATA_EXPORT` before querying data.
-- Successful individual and combined downloads are audited before the file is returned.
+- Successful individual and combined downloads, including `ORDER_EXPORT`, are audited before the file is returned.
 
 Future improvements, if operational volume requires them:
 
@@ -216,12 +206,13 @@ Future improvements, if operational volume requires them:
 Current state:
 
 - A full Prisma baseline migration exists for fresh databases.
-- Forward migrations enforce P0 inventory invariants and add reusable order-set storage.
+- Forward migrations enforce P0 inventory invariants and retain the applied migration history; `20260721150000_remove_order_templates` removes the retired tables without deleting the earlier add migration. Two later migrations add `TRANSFER` and cut inventory over to `WarehouseStock`.
 - `prisma:migrate:deploy` and `prisma:migrate:status` package commands are available.
 - Previous one-off schema scripts have been removed.
 - Migration, backup, recovery, and fresh-environment procedures are documented in `docs/11_database_migrations.md`.
-- Schema validation, client generation, tests, and production build pass.
-- The isolated test database passed the P0 preflight and all migrations through `20260712150000_add_order_templates`.
+- The 2026-07-21 removal change passed schema validation, typecheck, lint, unit tests, and the isolated integration test cases. Regenerate the Prisma client and rerun the production build after stopping the active development server.
+- On 2026-07-12 the isolated test database passed the P0 preflight and applied all migrations then present through `20260712150000_add_order_templates`; that historical migration remains immutable.
+- Apply and verify `20260721150000_remove_order_templates`, `20260721160000_add_transfer_movement_type`, and `20260721161000_add_warehouse_inventory` in each environment through the documented forward migration workflow and maintenance window.
 - On 2026-07-12 the operational Supabase database also passed all nine P0 preflight checks, was backed up, applied both pending forward migrations, and passed post-deployment catalog and authenticated read-only screen checks.
 
 Remaining tasks:
@@ -245,8 +236,8 @@ Current state:
 
 Current tests:
 
-- 156 unit and policy tests run without external services, including version-bound session revocation, constant-cost invalid-credential handling, encoded Action redirect headers, Next framework-error preservation, reusable order-set validation/services/actions, active-reagent policy, single-set row provenance and transitions, lean form projection, real-data sidebar shipment count/failure fallback, inventory-screen search/status pagination and status precedence, movement-screen search/type predicate reuse, export filters/date boundaries, movement delta rules, workbook formatting, download authorization, repeatable-read invocation, report-specific parameter rejection, structured audit details, row/text/file limits, and audit-before-release behavior.
-- All 13 PostgreSQL integration tests pass against the isolated `TEST_DATABASE_URL`, including concurrent shipment, reversal, order-cancellation, stock-adjustment, proactive replacement confirmation/eligible-LOT shipment/audit, reusable order-set lifecycle/version/audit, concurrent order-number scenarios, and filtered export/reference resolution.
+- Unit and policy tests cover session revocation, constant-cost invalid-credential handling, Action redirect headers, framework-error preservation, manual multi-item ordering, sidebar failure fallback, warehouse inventory and movement filtering, partial-transfer validation/retry, export boundaries, workbook formatting, authorization, and audit-before-release behavior.
+- PostgreSQL integration coverage includes concurrent shipment, reversal, order cancellation, warehouse stock adjustment and partial transfer, finished-goods-only shipment, proactive replacement, concurrent order-number scenarios, and filtered export/reference resolution.
 - The integration suite blocks execution when the test and operational DB targets match.
 - A built-server E2E verifies that an authenticated write Action commits, returns `303`, emits an ASCII-safe redirect header, and preserves the decoded Korean success message.
 - A built production server against the isolated database verifies unauthenticated `401` behavior and authenticated combined XLSX sheet contents, stock delta, required audit creation, and complete fixture cleanup.
@@ -255,9 +246,10 @@ Recommended tests:
 
 - Inbound stock validation.
 - Order cancellation restrictions.
-- Browser-level order-set management, repeated application, edited-quantity submission, and success-redirect flow.
+- Browser-level manual multi-item order entry, validation, and success-redirect flow.
 - Authentication and authorization checks for every exported Server Action.
 - P0 migration preflight and CHECK/partial-unique enforcement against a disposable PostgreSQL database.
+- Warehouse cutover backfill, `TRANSFER` shape CHECK, and old-column removal against a disposable copy of production-shaped data.
 - Seed refusal and idempotency tests around non-production sample environments.
 
 ## Priority 11: Documentation Maintenance
@@ -278,6 +270,6 @@ Tasks:
 
 ## Suggested Next Implementation Order
 
-1. Deploy or restart the verified application artifact in the actual hosting environment and run the browser-level order-set workflow smoke test.
+1. Back up and verify each target, stop writes, apply the order-set removal and both warehouse migrations, deploy the matching artifact, and run inventory transfer, finished-goods shipment, movement and export smoke tests.
 2. Check for and, if necessary, retire the historical seed administrator before release.
 3. Continue with audit completeness, strict shared validation, and authorization regression coverage.
