@@ -8,10 +8,7 @@ import {
   isLotStatusKind,
   type LotStatusKind
 } from "./lot-status";
-import {
-  isWarehouseKind,
-  type WarehouseKind
-} from "./warehouse";
+import type { WarehouseKind } from "./warehouse";
 import { addDateOnlyDays, dateOnlyUtc, koreaDateKey } from "../lib/date";
 
 const KOREA_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -119,7 +116,7 @@ export function normalizedWarehouse(value?: string): WarehouseKind | undefined {
     return undefined;
   }
 
-  if (!isWarehouseKind(normalized)) {
+  if (!/^[A-Z][A-Z0-9_]{1,29}$/.test(normalized)) {
     throw new Error("EXPORT_FILTER_WAREHOUSE_INVALID");
   }
 

@@ -103,6 +103,18 @@ export async function transferWarehouseStock(
       }
     });
 
+    const warehouseMaster = (tx as unknown as {
+      warehouse?: { findMany(args: { where: { code: { in: string[] } }; select: { code: true; name: true } }): Promise<Array<{ code: string; name: string }>> };
+    }).warehouse;
+    const warehouseNames = warehouseMaster
+      ? await warehouseMaster.findMany({
+          where: { code: { in: [input.sourceWarehouse, input.destinationWarehouse] } },
+          select: { code: true, name: true }
+        })
+      : [];
+    const sourceLabel = warehouseLabel(input.sourceWarehouse, warehouseNames);
+    const destinationLabel = warehouseLabel(input.destinationWarehouse, warehouseNames);
+
     const movement = await tx.stockMovement.create({
       data: {
         reagentLotId: lot.id,
@@ -122,7 +134,7 @@ export async function transferWarehouseStock(
         action: "STOCK_TRANSFER",
         entityType: "STOCK_MOVEMENT",
         entityId: movement.id,
-        description: `${lot.lotNo} ${warehouseLabel(input.sourceWarehouse)} → ${warehouseLabel(input.destinationWarehouse)} ${input.quantity}개 이동: ${reason}`,
+        description: `${lot.lotNo} ${sourceLabel} → ${destinationLabel} ${input.quantity}개 이동: ${reason}`,
         actorId: input.actorId
       }
     });

@@ -1,4 +1,5 @@
-import type { PrismaClient, Warehouse } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
+import type { WarehouseKind } from "../domain/warehouse";
 import type { StockAdjustmentType } from "../domain/stock-adjustment";
 import { RetryableTransactionError, runSerializableTransaction } from "../lib/transaction";
 
@@ -8,7 +9,7 @@ type AdjustLotStockInput = {
   type: StockAdjustmentType;
   reason: string;
   actorId: string;
-  warehouse?: Warehouse;
+  warehouse?: WarehouseKind;
 };
 
 export async function adjustLotStockValue(db: PrismaClient, input: AdjustLotStockInput) {

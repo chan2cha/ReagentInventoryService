@@ -8,11 +8,7 @@ import {
   PackagePlus
 } from "lucide-react";
 import { useId, useState } from "react";
-import {
-  WAREHOUSE_KINDS,
-  warehouseLabel,
-  type WarehouseKind
-} from "@/domain/warehouse";
+import { warehouseLabel, type WarehouseKind, type WarehouseOption } from "@/domain/warehouse";
 import { DialogFrame } from "../dialog-frame";
 import { SubmitButton } from "../submit-button";
 import { adjustLotStock, transferLotWarehouse } from "./actions";
@@ -30,6 +26,8 @@ type InventoryManagementDialogProps = {
   lotNo: string;
   minStock: number | null;
   warehouse: WarehouseKind;
+  warehouses?: readonly WarehouseOption[];
+  labelWarehouses?: readonly WarehouseOption[];
 };
 
 const operationDetails = {
@@ -65,16 +63,18 @@ export function InventoryManagementDialog({
   lotId,
   lotNo,
   minStock,
-  warehouse
+  warehouse,
+  warehouses = [],
+  labelWarehouses = warehouses
 }: InventoryManagementDialogProps) {
   const tabsId = useId();
   const [mode, setMode] = useState<ManagementMode>("ADJUST");
   const [operation, setOperation] = useState<AdjustmentOperation>("REMOVE");
   const [adjustmentQuantity, setAdjustmentQuantity] = useState(1);
   const [transferQuantity, setTransferQuantity] = useState(1);
-  const initialDestination = WAREHOUSE_KINDS.find((value) => value !== warehouse) ?? warehouse;
+  const initialDestination = warehouses.find((value) => value.code !== warehouse)?.code ?? warehouse;
   const [destinationWarehouse, setDestinationWarehouse] = useState<WarehouseKind>(initialDestination);
-  const sourceLabel = warehouseLabel(warehouse);
+  const sourceLabel = warehouseLabel(warehouse, labelWarehouses);
 
   const operationDetail = operationDetails[operation];
   const signedAdjustment = operation === "ADD" ? adjustmentQuantity : -adjustmentQuantity;
@@ -88,7 +88,7 @@ export function InventoryManagementDialog({
   );
   const adjustmentConfirmMessage = `${allergenName} ${lotNo} ${sourceLabel} 창고 재고를 ${adjustmentQuantity}개 ${operationDetail.button}하시겠습니까? 변경 후 수량은 ${nextQuantity}개입니다.`;
 
-  const destinationLabel = warehouseLabel(destinationWarehouse);
+  const destinationLabel = warehouseLabel(destinationWarehouse, warehouses);
   const remainingQuantity = currentQuantity - transferQuantity;
   const transferQuantityInvalid = transferQuantity < 1 || remainingQuantity < 0;
   const transferConfirmMessage = `${allergenName} ${lotNo} 재고 ${transferQuantity}개를 ${sourceLabel}에서 ${destinationLabel}(으)로 이동하시겠습니까?`;
@@ -254,8 +254,8 @@ export function InventoryManagementDialog({
                   required
                   value={destinationWarehouse}
                 >
-                  {WAREHOUSE_KINDS.filter((value) => value !== warehouse).map((value) => (
-                    <option key={value} value={value}>{warehouseLabel(value)}</option>
+                  {warehouses.filter((value) => value.code !== warehouse).map((value) => (
+                    <option key={value.code} value={value.code}>{value.name}</option>
                   ))}
                 </select>
               </label>

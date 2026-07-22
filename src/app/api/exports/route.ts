@@ -11,6 +11,7 @@ import {
   type OrderHistoryExportRow
 } from "@/lib/excel-export";
 import { prisma } from "@/lib/prisma";
+import { getWarehouseOptions } from "@/lib/warehouse-data";
 import {
   ExportRowLimitExceededError,
   EXPORT_ROW_LIMIT,
@@ -33,7 +34,8 @@ import {
 import {
   isWarehouseKind,
   warehouseLabel,
-  type WarehouseKind
+  type WarehouseKind,
+  type WarehouseOption
 } from "@/domain/warehouse";
 
 export const dynamic = "force-dynamic";
@@ -210,13 +212,13 @@ function contentDisposition(fileName: string, asciiFileName: string) {
   return `attachment; filename="${asciiFileName}"; filename*=UTF-8''${encodedFileName(fileName)}`;
 }
 
-function inventoryWorkbookRows(rows: LotExportRow[]): InventoryExportRow[] {
+function inventoryWorkbookRows(rows: LotExportRow[], warehouses: readonly WarehouseOption[]): InventoryExportRow[] {
   return rows.map((row) => ({
     reagentCode: row.allergenCode,
     reagentName: row.allergenName,
     category: row.category,
     lotNo: row.lotNo,
-    warehouse: warehouseLabel(row.warehouse),
+    warehouse: warehouseLabel(row.warehouse, warehouses),
     receivedDate: row.receivedDate,
     expirationDate: row.expirationDate,
     initialQuantity: row.initialQuantity,
@@ -240,16 +242,16 @@ function referenceTypeLabel(value: string | null) {
   return value ? labels[value] ?? value : null;
 }
 
-function movementWorkbookRows(rows: MovementDataRow[]): MovementExportRow[] {
+function movementWorkbookRows(rows: MovementDataRow[], warehouses: readonly WarehouseOption[]): MovementExportRow[] {
   return rows.map((row) => ({
     occurredAt: row.createdAt,
     type: row.typeLabel,
     reagentCode: row.allergenCode,
     reagentName: row.allergenName,
     lotNo: row.lotNo,
-    warehouse: warehouseLabel(row.warehouse),
+    warehouse: warehouseLabel(row.warehouse, warehouses),
     destinationWarehouse: row.destinationWarehouse
-      ? warehouseLabel(row.destinationWarehouse)
+      ? warehouseLabel(row.destinationWarehouse, warehouses)
       : null,
     expirationDate: row.expirationDate,
     recordedQuantity: row.rawQuantity,
@@ -330,21 +332,23 @@ function inventoryFilterValues(
 function addInventoryFilters(
   filters: ExportMetadataFilter[],
   values: ReturnType<typeof inventoryFilterValues>,
-  prefix = ""
+  prefix = "",
+  warehouses: readonly WarehouseOption[] = []
 ) {
   if (values.q) filters.push({ label: `${prefix}검색어`, value: values.q });
   if (values.status) {
     filters.push({ label: `${prefix}상태`, value: lotStatusLabel(values.status) });
   }
   if (values.warehouse) {
-    filters.push({ label: `${prefix}창고`, value: warehouseLabel(values.warehouse) });
+    filters.push({ label: `${prefix}창고`, value: warehouseLabel(values.warehouse, warehouses) });
   }
 }
 
 function addMovementFilters(
   filters: ExportMetadataFilter[],
   values: ReturnType<typeof movementFilterValues>,
-  prefix = ""
+  prefix = "",
+  warehouses: readonly WarehouseOption[] = []
 ) {
   if (values.q) filters.push({ label: `${prefix}검색어`, value: values.q });
   if (values.from || values.to) {
@@ -357,7 +361,7 @@ function addMovementFilters(
     filters.push({ label: `${prefix}구분`, value: stockMovementTypeLabel(values.type) });
   }
   if (values.warehouse) {
-    filters.push({ label: `${prefix}창고`, value: warehouseLabel(values.warehouse) });
+    filters.push({ label: `${prefix}창고`, value: warehouseLabel(values.warehouse, warehouses) });
   }
 }
 
@@ -449,6 +453,7 @@ async function generateExport(
   user: { name: string; loginId: string },
   generatedAt: Date
 ) {
+  const warehouses = await getWarehouseOptions(false);
   let inventory: InventoryExportRow[] | undefined;
   let movements: MovementExportRow[] | undefined;
   let orders: OrderHistoryExportRow[] | undefined;
@@ -464,8 +469,8 @@ async function generateExport(
       (tx) => listLotExportRows(tx, { ...values, now: generatedAt }),
       EXPORT_TRANSACTION_OPTIONS
     );
-    inventory = inventoryWorkbookRows(rows);
-    addInventoryFilters(filters, values);
+    inventory = inventoryWorkbookRows(rows, warehouses);
+    addInventoryFilters(filters, values, "", warehouses);
     action = "INVENTORY_EXPORT";
     title = "재고현황";
     asciiTitle = "inventory";
@@ -475,8 +480,8 @@ async function generateExport(
       (tx) => listMovementExportRows(tx, values),
       EXPORT_TRANSACTION_OPTIONS
     );
-    movements = movementWorkbookRows(rows);
-    addMovementFilters(filters, values);
+    movements = movementWorkbookRows(rows, warehouses);
+    addMovementFilters(filters, values, "", warehouses);
     action = "MOVEMENT_EXPORT";
     title = "입출고이력";
     asciiTitle = "movements";
@@ -524,13 +529,13 @@ async function generateExport(
     }), EXPORT_TRANSACTION_OPTIONS);
 
     if (rows.inventory) {
-      inventory = inventoryWorkbookRows(rows.inventory);
-      addInventoryFilters(filters, inventoryValues!, "재고 · ");
+      inventory = inventoryWorkbookRows(rows.inventory, warehouses);
+      addInventoryFilters(filters, inventoryValues!, "재고 · ", warehouses);
     }
 
     if (rows.movements && movementValues) {
-      movements = movementWorkbookRows(rows.movements);
-      addMovementFilters(filters, movementValues, "이력 · ");
+      movements = movementWorkbookRows(rows.movements, warehouses);
+      addMovementFilters(filters, movementValues, "이력 · ", warehouses);
     }
 
     action = "COMBINED_EXPORT";

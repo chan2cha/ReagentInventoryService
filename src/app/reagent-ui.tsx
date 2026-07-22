@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import {
   Boxes,
   Building2,
+  Warehouse,
   ClipboardList,
   FileSpreadsheet,
   FlaskConical,
@@ -48,7 +49,7 @@ type ShellProps = {
   children: React.ReactNode;
 };
 
-type AppRoute = "/" | "/lots" | "/receiving" | "/orders" | "/shipments" | "/replacements" | "/clients" | "/allergens" | "/movements" | "/exports" | "/audit" | "/users" | "/account/password" | "/access-denied";
+type AppRoute = "/" | "/lots" | "/receiving" | "/orders" | "/shipments" | "/replacements" | "/clients" | "/allergens" | "/warehouses" | "/movements" | "/exports" | "/audit" | "/users" | "/account/password" | "/access-denied";
 type ActionRoute = AppRoute | "/orders/new";
 
 type NavItem = { href: AppRoute; label: string; icon: LucideIcon; capability?: Capability };
@@ -80,7 +81,8 @@ const navGroups: NavGroup[] = [
     label: "기준 정보",
     items: [
       { href: "/clients", label: "거래처", icon: Building2 },
-      { href: "/allergens", label: "시약 관리", icon: FlaskConical }
+      { href: "/allergens", label: "시약 관리", icon: FlaskConical },
+      { href: "/warehouses", label: "창고 관리", icon: Warehouse }
     ]
   },
   {

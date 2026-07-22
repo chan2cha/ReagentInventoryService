@@ -3,17 +3,14 @@ import {
   lotStatusLabel,
   type LotStatusKind
 } from "@/domain/lot-status";
-import {
-  WAREHOUSE_KINDS,
-  warehouseLabel,
-  type WarehouseKind
-} from "@/domain/warehouse";
+import type { WarehouseKind, WarehouseOption } from "@/domain/warehouse";
 import { TableSearch } from "../table-search";
 
 type LotTableFiltersProps = {
   q?: string;
   status?: LotStatusKind;
   warehouse?: WarehouseKind;
+  warehouses: readonly WarehouseOption[];
 };
 
 const lotStatusOptions = [
@@ -24,15 +21,7 @@ const lotStatusOptions = [
   }))
 ];
 
-const warehouseOptions = [
-  { label: "전체 창고", value: "" },
-  ...WAREHOUSE_KINDS.map((warehouse) => ({
-    label: warehouseLabel(warehouse),
-    value: warehouse
-  }))
-];
-
-export function LotTableFilters({ q, status, warehouse }: LotTableFiltersProps) {
+export function LotTableFilters({ q, status, warehouse, warehouses }: LotTableFiltersProps) {
   return (
     <TableSearch
       description="검색어, 재고 상태와 창고를 조합해 필요한 재고만 확인하세요."
@@ -46,7 +35,7 @@ export function LotTableFilters({ q, status, warehouse }: LotTableFiltersProps) 
         {
           label: "창고",
           name: "warehouse",
-          options: warehouseOptions,
+          options: [{ label: "전체 창고", value: "" }, ...warehouses.map((item) => ({ label: item.name, value: item.code }))],
           value: warehouse
         }
       ]}

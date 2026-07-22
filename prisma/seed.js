@@ -80,6 +80,14 @@ const lotSeeds = [
   { code: "WHT-01", lotNo: "LOT-2507-WHT-A", initialQuantity: 12, currentQuantity: 5, receivedDate: "2025-07-15", expirationDate: "2026-07-30" }
 ];
 
+const warehouseSeeds = [
+  { code: "FINISHED_GOODS", name: "완제품" },
+  { code: "SAMPLE", name: "검체" },
+  { code: "RETURNED", name: "반품" },
+  { code: "NONCONFORMING", name: "부적합" },
+  { code: "DISPOSAL", name: "폐기" }
+];
+
 const clientSeeds = [
   { name: "서울대학교병원", region: "서울 종로구", managerName: "김정호", deliveryDepartment: "진단검사의학과", memo: "평일 오전 납품 요청" },
   { name: "삼성서울병원", region: "서울 강남구", managerName: "이수진", deliveryDepartment: "알레르기내과", memo: "수령 전 담당자 연락" },
@@ -323,6 +331,14 @@ async function main() {
   const allergensByCode = new Map();
   const clientsByName = new Map();
   const lotsByNo = new Map();
+
+  for (const warehouse of warehouseSeeds) {
+    await prisma.warehouse.upsert({
+      where: { code: warehouse.code },
+      update: { name: warehouse.name, isActive: true },
+      create: { ...warehouse, isActive: true }
+    });
+  }
 
   for (const seed of allergenSeeds) {
     const allergen = await prisma.allergen.upsert({

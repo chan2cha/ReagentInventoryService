@@ -2,15 +2,16 @@ import "server-only";
 
 /** 최소 재고와 LOT 수량을 조인 비교해야 하는 상태 필터를 DB에서 페이지 단위로 실행한다. */
 
-import { Prisma, type PrismaClient, type Warehouse } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { addDateOnlyDays, koreaDateKey } from "@/lib/date";
 import type { LotStatusKind } from "@/domain/lot-status";
+import type { WarehouseKind } from "@/domain/warehouse";
 
 type StatusFilteredLotQueryClient = Pick<PrismaClient, "$queryRaw">;
 
 export type StatusFilteredLotRecord = {
   id: string;
-  warehouse: Warehouse;
+  warehouse: WarehouseKind;
   lotNo: string;
   receivedDate: Date;
   expirationDate: Date;
@@ -28,7 +29,7 @@ type StatusFilteredLotQueryOptions = {
   q?: string;
   status: Extract<LotStatusKind, "LOW_STOCK" | "NORMAL">;
   now: Date;
-  warehouse?: Warehouse;
+  warehouse?: WarehouseKind;
 };
 
 function statusFilteredLotFromWhere({ q, status, now, warehouse }: StatusFilteredLotQueryOptions) {
@@ -50,7 +51,7 @@ function statusFilteredLotFromWhere({ q, status, now, warehouse }: StatusFiltere
     : Prisma.sql`
         AND (allergen."minStock" <= 0 OR stock."quantity" >= allergen."minStock")`;
   const warehouseCondition = warehouse
-    ? Prisma.sql`AND stock."warehouse" = ${warehouse}::"Warehouse"`
+    ? Prisma.sql`AND stock."warehouse" = ${warehouse}`
     : Prisma.empty;
 
   return Prisma.sql`

@@ -3,17 +3,14 @@ import {
   stockMovementTypeLabel,
   type StockMovementKind
 } from "@/domain/stock-movement-presentation";
-import {
-  WAREHOUSE_KINDS,
-  warehouseLabel,
-  type WarehouseKind
-} from "@/domain/warehouse";
+import type { WarehouseKind, WarehouseOption } from "@/domain/warehouse";
 import { TableSearch } from "../table-search";
 
 type MovementTableFiltersProps = {
   q?: string;
   type?: StockMovementKind;
   warehouse?: WarehouseKind;
+  warehouses: readonly WarehouseOption[];
 };
 
 const movementTypeOptions = [
@@ -24,15 +21,7 @@ const movementTypeOptions = [
   }))
 ];
 
-const warehouseOptions = [
-  { label: "전체 창고", value: "" },
-  ...WAREHOUSE_KINDS.map((warehouse) => ({
-    label: warehouseLabel(warehouse),
-    value: warehouse
-  }))
-];
-
-export function MovementTableFilters({ q, type, warehouse }: MovementTableFiltersProps) {
+export function MovementTableFilters({ q, type, warehouse, warehouses }: MovementTableFiltersProps) {
   return (
     <TableSearch
       description="검색어와 구분을 조합해 원하는 이력만 확인하세요."
@@ -46,7 +35,7 @@ export function MovementTableFilters({ q, type, warehouse }: MovementTableFilter
         {
           label: "창고",
           name: "warehouse",
-          options: warehouseOptions,
+          options: [{ label: "전체 창고", value: "" }, ...warehouses.map((item) => ({ label: item.name, value: item.code }))],
           value: warehouse
         }
       ]}

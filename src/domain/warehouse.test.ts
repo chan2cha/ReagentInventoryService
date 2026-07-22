@@ -27,8 +27,9 @@ describe("warehouse", () => {
     expect(warehouseLabel(warehouse)).toBe(label);
   });
 
-  it("rejects unknown and empty warehouse values", () => {
-    expect(isWarehouseKind("QUARANTINE")).toBe(false);
+  it("accepts a valid custom warehouse code and rejects malformed values", () => {
+    expect(isWarehouseKind("QUARANTINE")).toBe(true);
     expect(isWarehouseKind("")).toBe(false);
+    expect(isWarehouseKind("cold-storage")).toBe(false);
   });
 });

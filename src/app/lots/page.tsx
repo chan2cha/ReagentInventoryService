@@ -7,7 +7,8 @@ import { parsePage } from "@/lib/pagination";
 import { Pagination } from "../pagination";
 import { ExportDownloadButton } from "../exports/export-download-button";
 import { isLotStatusKind, lotStatusLabel } from "@/domain/lot-status";
-import { isWarehouseKind, warehouseLabel } from "@/domain/warehouse";
+import { warehouseLabel } from "@/domain/warehouse";
+import { getWarehouseOptions } from "@/lib/warehouse-data";
 import { LotTableFilters } from "./lot-table-filters";
 import { FlashMessage } from "../flash-message";
 import { getFlashMessage } from "@/lib/flash-message";
@@ -20,11 +21,13 @@ export default async function LotsPage({
   searchParams?: Promise<{ page?: string; q?: string; status?: string; warehouse?: string }>;
 }) {
   const params = await searchParams;
-  const [user, flash] = await Promise.all([requireUser(), getFlashMessage()]);
+  const [user, flash, warehouses, warehouseLabels] = await Promise.all([
+    requireUser(), getFlashMessage(), getWarehouseOptions(), getWarehouseOptions(false)
+  ]);
   const statusParam = params?.status?.trim() ?? "";
   const lotStatus = isLotStatusKind(statusParam) ? statusParam : undefined;
   const warehouseParam = params?.warehouse?.trim() ?? "";
-  const warehouse = isWarehouseKind(warehouseParam) ? warehouseParam : undefined;
+  const warehouse = warehouses.some((item) => item.code === warehouseParam) ? warehouseParam : undefined;
   const data = await getLotRows(parsePage(params?.page), params?.q?.trim(), lotStatus, warehouse);
   const lotRows = data.rows;
   const canWrite = can(user.role, "STOCK_WRITE");
@@ -40,7 +43,7 @@ export default async function LotsPage({
     >
       <FlashMessage value={flash} />
       <div className="table-filter-toolbar extended-filter-toolbar">
-        <LotTableFilters q={params?.q} status={lotStatus} warehouse={warehouse} />
+        <LotTableFilters q={params?.q} status={lotStatus} warehouse={warehouse} warehouses={warehouses} />
         {canExport ? (
           <ExportDownloadButton
             fallbackFileName="재고-현황.xlsx"
@@ -49,7 +52,7 @@ export default async function LotsPage({
           />
         ) : null}
       </div>
-      <Panel title="창고별 입고분 목록" note={`${lotSourceLabel(lotRows)} · 유통기한 빠른 순${lotStatus ? ` · ${lotStatusLabel(lotStatus)}` : ""}${warehouse ? ` · ${warehouseLabel(warehouse)}` : ""}`}>
+      <Panel title="창고별 입고분 목록" note={`${lotSourceLabel(lotRows)} · 유통기한 빠른 순${lotStatus ? ` · ${lotStatusLabel(lotStatus)}` : ""}${warehouse ? ` · ${warehouseLabel(warehouse, warehouseLabels)}` : ""}`}>
         <div className="lot-inventory-table">
           <Table>
             <thead>
@@ -76,7 +79,7 @@ export default async function LotsPage({
                     </span>
                   </td>
                   <td>{lot.lotNo}</td>
-                  <td><span className="warehouse-label">{warehouseLabel(lot.warehouse)}</span></td>
+                  <td><span className="warehouse-label">{warehouseLabel(lot.warehouse, warehouseLabels)}</span></td>
                   <td>{formatDate(lot.receivedDate)}</td>
                   <td>{formatDate(lot.expirationDate)}</td>
                   <td>{lot.currentQuantity}</td>
@@ -96,6 +99,8 @@ export default async function LotsPage({
                           lotNo={lot.lotNo}
                           minStock={lot.minStock}
                           warehouse={lot.warehouse}
+                          warehouses={warehouses}
+                          labelWarehouses={warehouseLabels}
                         />
                       </div>
                     </td>

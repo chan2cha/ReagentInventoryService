@@ -3,7 +3,7 @@
 import { Boxes, History } from "lucide-react";
 import { useState } from "react";
 import { LOT_STATUS_KINDS, lotStatusLabel } from "@/domain/lot-status";
-import { WAREHOUSE_KINDS, warehouseLabel } from "@/domain/warehouse";
+import type { WarehouseOption } from "@/domain/warehouse";
 import { ExportDownloadButton } from "./export-download-button";
 
 const movementTypes = [
@@ -20,7 +20,7 @@ const inventoryStatuses = LOT_STATUS_KINDS.map((status) => ({
   value: status
 }));
 
-export function ExportCenter() {
+export function ExportCenter({ warehouses }: { warehouses: readonly WarehouseOption[] }) {
   const [inventoryQ, setInventoryQ] = useState("");
   const [inventoryStatus, setInventoryStatus] = useState("");
   const [inventoryWarehouse, setInventoryWarehouse] = useState("");
@@ -101,8 +101,8 @@ export function ExportCenter() {
                 value={inventoryWarehouse}
               >
                 <option value="">전체 창고</option>
-                {WAREHOUSE_KINDS.map((warehouse) => (
-                  <option key={warehouse} value={warehouse}>{warehouseLabel(warehouse)}</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.code} value={warehouse.code}>{warehouse.name}</option>
                 ))}
               </select>
             </label>
@@ -195,8 +195,8 @@ export function ExportCenter() {
                 value={movementWarehouse}
               >
                 <option value="">전체 창고</option>
-                {WAREHOUSE_KINDS.map((warehouse) => (
-                  <option key={warehouse} value={warehouse}>{warehouseLabel(warehouse)}</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.code} value={warehouse.code}>{warehouse.name}</option>
                 ))}
               </select>
             </label>

@@ -7,17 +7,18 @@ import { requirePageRole } from "@/lib/auth";
 import { FlashMessage } from "@/app/flash-message";
 import { getFlashMessage } from "@/lib/flash-message";
 import { OperationGuide, guideIcons } from "../operation-guide";
-import { WAREHOUSE_KINDS, warehouseLabel } from "@/domain/warehouse";
+import { getWarehouseOptions } from "@/lib/warehouse-data";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReceivingPage() {
-  const [, allergens, flash] = await Promise.all([
+  const [, allergens, warehouses, flash] = await Promise.all([
     requirePageRole(["ADMIN", "SHIPMENT_MANAGER"]),
     getReceivingAllergens(),
+    getWarehouseOptions(),
     getFlashMessage()
   ]);
-  const canSubmit = allergens.some((allergen) => allergen.source === "database");
+  const canSubmit = allergens.some((allergen) => allergen.source === "database") && warehouses.length > 0;
 
   return (
     <AppShell
@@ -60,8 +61,8 @@ export default async function ReceivingPage() {
             <label>
               입고 창고
               <select defaultValue="FINISHED_GOODS" disabled={!canSubmit} name="warehouse" required>
-                {WAREHOUSE_KINDS.map((warehouse) => (
-                  <option key={warehouse} value={warehouse}>{warehouseLabel(warehouse)}</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.code} value={warehouse.code}>{warehouse.name}</option>
                 ))}
               </select>
             </label>

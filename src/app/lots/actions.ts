@@ -5,11 +5,11 @@
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { signedAdjustmentQuantity, type StockAdjustmentOperation } from "@/domain/stock-adjustment";
-import { isWarehouseKind } from "@/domain/warehouse";
 import { redirectWithFlash } from "@/lib/flash-message";
 import { formString } from "@/lib/form-data";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isActiveWarehouse } from "@/lib/warehouse-data";
 import { adjustLotStockValue } from "@/services/stock-service";
 import { transferWarehouseStock } from "@/services/warehouse-transfer-service";
 
@@ -18,6 +18,7 @@ async function fail(message: string): Promise<never> {
 }
 
 export async function adjustLotStock(formData: FormData) {
+  const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
   const lotId = formString(formData, "lotId");
   const quantityRaw = formString(formData, "quantity");
   const reason = formString(formData, "reason");
@@ -35,7 +36,7 @@ export async function adjustLotStock(formData: FormData) {
     await fail("조정할 입고분을 찾을 수 없습니다.");
   }
 
-  if (!isWarehouseKind(warehouseRaw)) {
+  if (!(await isActiveWarehouse(warehouseRaw))) {
     return fail("조정할 창고를 다시 선택하세요.");
   }
 
@@ -52,7 +53,6 @@ export async function adjustLotStock(formData: FormData) {
   }
 
   try {
-    const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
     await adjustLotStockValue(prisma, {
       lotId,
       quantity,
@@ -96,6 +96,7 @@ export async function adjustLotStock(formData: FormData) {
 }
 
 export async function transferLotWarehouse(formData: FormData) {
+  const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
   const lotId = formString(formData, "lotId");
   const sourceWarehouseRaw = formString(formData, "sourceWarehouse");
   const destinationWarehouseRaw = formString(formData, "destinationWarehouse");
@@ -106,7 +107,7 @@ export async function transferLotWarehouse(formData: FormData) {
     await fail("이동할 입고분을 찾을 수 없습니다.");
   }
 
-  if (!isWarehouseKind(sourceWarehouseRaw) || !isWarehouseKind(destinationWarehouseRaw)) {
+  if (!(await isActiveWarehouse(sourceWarehouseRaw)) || !(await isActiveWarehouse(destinationWarehouseRaw))) {
     return fail("출발 창고와 도착 창고를 다시 선택하세요.");
   }
 
@@ -124,7 +125,6 @@ export async function transferLotWarehouse(formData: FormData) {
   }
 
   try {
-    const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
     await transferWarehouseStock(prisma, {
       actorId: user.id,
       destinationWarehouse: destinationWarehouseRaw,

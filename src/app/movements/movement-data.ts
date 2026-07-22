@@ -8,11 +8,7 @@ import {
   type StockMovementKind,
   type StockMovementLabel
 } from "@/domain/stock-movement-presentation";
-import {
-  warehouseLabel,
-  type WarehouseKind,
-  type WarehouseLabel
-} from "@/domain/warehouse";
+import { warehouseLabel, type WarehouseKind, type WarehouseLabel, type WarehouseOption } from "@/domain/warehouse";
 import { findAllergen, formatDate, movements } from "../reagent-data";
 import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
 
@@ -33,7 +29,8 @@ export type MovementRow = {
 function sampleMovementRows(
   q = "",
   type?: StockMovementKind,
-  warehouse?: WarehouseKind
+  warehouse?: WarehouseKind,
+  warehouses?: readonly WarehouseOption[]
 ): MovementRow[] {
   const query = q.trim().toLocaleLowerCase("ko-KR");
   const typeLabel = type ? stockMovementTypeLabel(type) : undefined;
@@ -49,9 +46,9 @@ function sampleMovementRows(
       allergenCode: allergen?.code ?? "-",
       lotNo: movement.lotNo,
       quantity: movement.quantity,
-      warehouse: warehouseLabel(movement.warehouse ?? "FINISHED_GOODS"),
+      warehouse: warehouseLabel(movement.warehouse ?? "FINISHED_GOODS", warehouses),
       destinationWarehouse: movement.destinationWarehouse
-        ? warehouseLabel(movement.destinationWarehouse)
+        ? warehouseLabel(movement.destinationWarehouse, warehouses)
         : null,
       memo: movement.memo,
       source: "sample" as const
@@ -60,8 +57,8 @@ function sampleMovementRows(
     if (typeLabel && movement.type !== typeLabel) return false;
     if (
       warehouse &&
-      movement.warehouse !== warehouseLabel(warehouse) &&
-      movement.destinationWarehouse !== warehouseLabel(warehouse)
+      movement.warehouse !== warehouseLabel(warehouse, warehouses) &&
+      movement.destinationWarehouse !== warehouseLabel(warehouse, warehouses)
     ) return false;
     if (!query) return true;
 
@@ -78,7 +75,8 @@ export async function getMovementRows(
   page: number,
   q = "",
   type?: StockMovementKind,
-  warehouse?: WarehouseKind
+  warehouse?: WarehouseKind,
+  warehouses?: readonly WarehouseOption[]
 ): Promise<PaginatedResult<MovementRow>> {
   try {
     const where = buildMovementWhere({ q, type, warehouse });
@@ -127,9 +125,9 @@ export async function getMovementRows(
       allergenCode: movement.reagentLot.allergen.code,
       lotNo: movement.reagentLot.lotNo,
       quantity: movement.quantity,
-      warehouse: warehouseLabel(movement.warehouse),
+      warehouse: warehouseLabel(movement.warehouse, warehouses),
       destinationWarehouse: movement.destinationWarehouse
-        ? warehouseLabel(movement.destinationWarehouse)
+        ? warehouseLabel(movement.destinationWarehouse, warehouses)
         : null,
       memo: movement.reason ?? "-",
       source: "database"
@@ -138,7 +136,7 @@ export async function getMovementRows(
     return handleDataSourceError(
       "movements",
       error,
-      () => paginateRows(sampleMovementRows(q, type, warehouse), page)
+      () => paginateRows(sampleMovementRows(q, type, warehouse, warehouses), page)
     );
   }
 }

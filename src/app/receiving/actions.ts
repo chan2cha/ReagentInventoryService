@@ -5,10 +5,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { requireRole } from "@/lib/auth";
-import { isWarehouseKind } from "@/domain/warehouse";
 import { redirectWithFlash } from "@/lib/flash-message";
 import { formString } from "@/lib/form-data";
 import { prisma } from "@/lib/prisma";
+import { isActiveWarehouse } from "@/lib/warehouse-data";
 
 function formDate(value: string) {
   return new Date(`${value}T00:00:00.000Z`);
@@ -19,6 +19,7 @@ async function fail(message: string): Promise<never> {
 }
 
 export async function createReceivingLot(formData: FormData) {
+  const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
   const allergenId = formString(formData, "allergenId");
   const lotNo = formString(formData, "lotNo");
   const quantityRaw = formString(formData, "quantity");
@@ -44,7 +45,7 @@ export async function createReceivingLot(formData: FormData) {
     await fail("입고일과 유통기한을 입력하세요.");
   }
 
-  if (!isWarehouseKind(warehouseRaw)) {
+  if (!(await isActiveWarehouse(warehouseRaw))) {
     return fail("입고 창고를 다시 선택하세요.");
   }
 
@@ -60,8 +61,6 @@ export async function createReceivingLot(formData: FormData) {
   }
 
   try {
-    const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
-
     await prisma.$transaction(async (tx) => {
       const allergen = await tx.allergen.findUnique({
         where: {

@@ -10,22 +10,26 @@ import { parsePage } from "@/lib/pagination";
 import { Pagination } from "../pagination";
 import { ExportDownloadButton } from "../exports/export-download-button";
 import { MovementTableFilters } from "./movement-table-filters";
-import { isWarehouseKind, warehouseLabel } from "@/domain/warehouse";
+import { warehouseLabel } from "@/domain/warehouse";
+import { getWarehouseOptions } from "@/lib/warehouse-data";
 
 export const dynamic = "force-dynamic";
 
 export default async function MovementsPage({ searchParams }: { searchParams?: Promise<{ page?: string; q?: string; type?: string; warehouse?: string }> }) {
   const params = await searchParams;
-  const user = await requireUser();
+  const [user, warehouses, warehouseLabels] = await Promise.all([
+    requireUser(), getWarehouseOptions(), getWarehouseOptions(false)
+  ]);
   const typeParam = params?.type?.trim() ?? "";
   const movementType = isStockMovementKind(typeParam) ? typeParam : undefined;
   const warehouseParam = params?.warehouse?.trim() ?? "";
-  const warehouse = isWarehouseKind(warehouseParam) ? warehouseParam : undefined;
+  const warehouse = warehouses.some((item) => item.code === warehouseParam) ? warehouseParam : undefined;
   const data = await getMovementRows(
     parsePage(params?.page),
     params?.q?.trim(),
     movementType,
-    warehouse
+    warehouse,
+    warehouseLabels
   );
   const movementRows = data.rows;
   const canExport = can(user.role, "DATA_EXPORT");
@@ -37,7 +41,7 @@ export default async function MovementsPage({ searchParams }: { searchParams?: P
       description="입고, 출고, 창고이동, 조정, 폐기 및 출고취소/복구 내역을 제조번호별로 확인합니다."
     >
       <div className="table-filter-toolbar extended-filter-toolbar">
-        <MovementTableFilters q={params?.q} type={movementType} warehouse={warehouse} />
+        <MovementTableFilters q={params?.q} type={movementType} warehouse={warehouse} warehouses={warehouses} />
         {canExport ? (
           <ExportDownloadButton
             fallbackFileName="입출고-이력.xlsx"
@@ -46,7 +50,7 @@ export default async function MovementsPage({ searchParams }: { searchParams?: P
           />
         ) : null}
       </div>
-      <Panel title="재고 이동 이력" note={`${movementSourceLabel(movementRows)} · 최신순${movementType ? ` · ${stockMovementTypeLabel(movementType)}` : ""}${warehouse ? ` · ${warehouseLabel(warehouse)}` : ""}`}>
+      <Panel title="재고 이동 이력" note={`${movementSourceLabel(movementRows)} · 최신순${movementType ? ` · ${stockMovementTypeLabel(movementType)}` : ""}${warehouse ? ` · ${warehouseLabel(warehouse, warehouseLabels)}` : ""}`}>
         <Table>
           <thead>
             <tr>
