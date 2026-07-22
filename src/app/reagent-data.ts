@@ -2,6 +2,8 @@ import type { WarehouseKind } from "@/domain/warehouse";
 
 export type LotStatus = "정상" | "재고부족" | "품절" | "유통기한 임박" | "유통기한 만료";
 export type OrderStatus = "접수" | "준비중" | "출고완료" | "취소";
+export type OrderOriginLabel = "직접 등록" | "부족분 재주문";
+export type ShipmentFulfillmentLabel = "정상 출고" | "부분 출고" | "취소";
 export type MovementType = "입고" | "출고" | "조정" | "폐기" | "창고이동";
 
 export type Allergen = {

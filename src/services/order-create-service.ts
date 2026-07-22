@@ -17,7 +17,7 @@ type CreateOrderInput = {
   now?: Date;
 };
 
-function isOrderNumberConflict(error: unknown) {
+export function isOrderNumberConflict(error: unknown) {
   if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "P2002") {
     return false;
   }
@@ -32,7 +32,7 @@ function isOrderNumberConflict(error: unknown) {
     : String(target ?? "").includes("orderNo");
 }
 
-async function nextOrderNo(tx: Prisma.TransactionClient, now?: Date) {
+export async function nextOrderNo(tx: Prisma.TransactionClient, now?: Date) {
   const prefix = `ORD-${koreaDatePrefix(now ?? new Date())}-`;
   const latest = await tx.order.findFirst({
     where: {

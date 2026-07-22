@@ -101,6 +101,7 @@ export default async function OrdersPage({
               <th>품목</th>
               <th>메모</th>
               <th>첨부 이미지</th>
+              <th>등록 구분</th>
               <th>상태</th>
               {canWrite ? <th>처리</th> : null}
             </tr>
@@ -133,6 +134,7 @@ export default async function OrdersPage({
                     </span>
                   ) : "-"}
                 </td>
+                <td><StatusBadge status={order.origin} /></td>
                 <td><StatusBadge status={order.status} /></td>
                 {canWrite ? <td>{order.canCancel && order.source === "database" ? (
                   <form action={cancelOrder} className="inline-cancel-form">

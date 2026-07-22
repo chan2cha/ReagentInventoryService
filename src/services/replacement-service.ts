@@ -51,7 +51,7 @@ export async function confirmReplacement(db: PrismaClient, input: {
     await tx.auditLog.create({ data: {
       action: excluded ? "REPLACEMENT_EXCLUDE" : "REPLACEMENT_CONFIRM",
       entityType: "REPLACEMENT", entityId: replacement.id,
-      description: excluded ? `${replacementNo} 교환 제외: ${input.excludeReason!.trim()}` : `${replacementNo} 선제 교환 ${input.quantity}개 확정`,
+      description: excluded ? `${replacementNo} 교환 제외: ${input.excludeReason!.trim()}` : `${replacementNo} 교환 ${input.quantity}개 확정`,
       actorId: input.actorId
     }});
     return replacement;
@@ -118,7 +118,7 @@ export async function completeReplacement(db: PrismaClient, input: {
     const shipment = await tx.shipment.create({ data: {
       orderId: replacement.originalShipmentItem.shipment.orderId,
       purpose: "REPLACEMENT", status: "SHIPPED", shippedBy: input.actorId,
-      memo: `${replacement.replacementNo} 선제 교환 출고`
+      memo: `${replacement.replacementNo} 교환 출고`
     }});
     await tx.shipmentItem.createMany({
       data: allocations.map((allocation) => ({
@@ -134,7 +134,7 @@ export async function completeReplacement(db: PrismaClient, input: {
         type: "OUT" as const,
         quantity: allocation.quantity,
         warehouse: "FINISHED_GOODS" as const,
-        reason: `${replacement.replacementNo} 선제 교환`,
+        reason: `${replacement.replacementNo} 교환`,
         refType: "REPLACEMENT",
         refId: replacement.id,
         createdBy: input.actorId

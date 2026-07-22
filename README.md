@@ -396,7 +396,7 @@ npm run test:integration
 | <code>src/app/receiving/receiving-data.ts</code> | 입고 폼의 활성 시약 목록을 조회하고 개발용 샘플 fallback을 처리합니다. |
 | <code>src/app/receiving/page.tsx</code> | <code>/receiving</code> 시약·LOT·수량·창고·입고일·유통기한 등록 화면입니다. |
 
-### 선제 교환
+### 사후 관리
 
 | 파일 | 역할 |
 |---|---|

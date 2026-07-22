@@ -86,7 +86,7 @@ export default async function Home() {
           </div>
         </Panel>
 
-        <Panel title="선제 교환 현황" note={`${dashboardSourceLabel([data.replacementSummary])} · 교환 관리 기준 적용`}>
+        <Panel title="교환 현황" note={`${dashboardSourceLabel([data.replacementSummary])} · 교환 관리 기준 적용`}>
           <div className="category-grid replacement-summary-grid">
             {[
               ["확인 대상", data.replacementSummary.candidateCount],

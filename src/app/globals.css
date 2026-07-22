@@ -301,7 +301,7 @@ a {
 .dashboard-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.55fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.15fr);
 }
 
 .dashboard-grid.lower {

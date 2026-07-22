@@ -16,9 +16,9 @@ const dispositionLabel = { COLLECTED_DISPOSED: "회수 후 폐기", CLIENT_DISPO
 export default async function ReplacementsPage() {
   await requirePageRole(["ADMIN", "SHIPMENT_MANAGER"]);
   const [data, flash, user] = await Promise.all([getReplacementData(), getFlashMessage(), requireUser()]);
-  return <AppShell active="/replacements" title="선제 교환 관리" description="유통기한 임박 납품분을 먼저 확인하고 신규 LOT로 교환합니다.">
+  return <AppShell active="/replacements" title="사후 관리" description="유통기한 임박 납품분을 먼저 확인하고 신규 LOT로 교환합니다.">
     <FlashMessage value={flash} />
-    <Panel title="선제 교환 안내" note="현재 적용 기준">
+    <Panel title="사후 관리 안내" note="현재 적용 기준">
       <OperationGuide items={[
         { title: "확인 대상 시점", description: <>원출고 LOT가 만료 <b>{data.policy.detectionDays}일 전</b>부터 확인 대상에 표시됩니다.</>, icon: guideIcons.Clock3, tone: "attention" },
         { title: "교환품 선택 기준", description: <>납품 시점에 유통기한이 <b>최소 {data.policy.minimumShelfLifeDays}일</b> 남은 LOT만 교환품으로 사용할 수 있습니다.</>, icon: guideIcons.PackageCheck, tone: "success" },

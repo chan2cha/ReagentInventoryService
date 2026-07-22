@@ -8,6 +8,7 @@ import {
   formatDate,
   orderItemSummary,
   orders,
+  type OrderOriginLabel,
   type OrderStatus
 } from "../reagent-data";
 import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
@@ -27,6 +28,7 @@ export type OrderRow = {
     fileName: string;
     byteSize: number;
   } | null;
+  origin: OrderOriginLabel;
   status: OrderStatus;
   canCancel: boolean;
   source: "database" | "sample";
@@ -46,6 +48,7 @@ function sampleOrderRows(): OrderRow[] {
       itemDetails: order.items.map((item) => ({ code: findAllergen(item.allergenId)?.code ?? "-", quantity: item.quantity })),
       memo: order.memo || "-",
       image: null,
+      origin: "직접 등록",
       status: order.status,
       canCancel: order.status === "접수" || order.status === "준비중",
       source: "sample"
@@ -62,6 +65,10 @@ function mapOrderStatus(status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANC
   } satisfies Record<typeof status, OrderStatus>;
 
   return map[status];
+}
+
+function mapOrderOrigin(origin: "MANUAL" | "SHORTAGE_REORDER"): OrderOriginLabel {
+  return origin === "SHORTAGE_REORDER" ? "부족분 재주문" : "직접 등록";
 }
 
 export async function getOrderRows(
@@ -117,6 +124,7 @@ export async function getOrderRows(
       itemDetails: order.items.map((item) => ({ code: item.allergen.code, quantity: item.quantity })),
       memo: order.memo || "-",
       image: order.image,
+      origin: mapOrderOrigin(order.origin),
       status: mapOrderStatus(order.status),
       canCancel: order.status === "RECEIVED" || order.status === "READY_TO_SHIP",
       source: "database"

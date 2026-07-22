@@ -32,6 +32,7 @@ describe("getOrderRows", () => {
       }],
       memo: "이미지 주문",
       image: { fileName: "order.png", byteSize: 2048 },
+      origin: "MANUAL",
       status: "RECEIVED"
     }]);
   });
@@ -47,7 +48,8 @@ describe("getOrderRows", () => {
     expect(result.rows).toEqual([
       expect.objectContaining({
         id: "order-1",
-        image: { fileName: "order.png", byteSize: 2048 }
+        image: { fileName: "order.png", byteSize: 2048 },
+        origin: "직접 등록"
       })
     ]);
 

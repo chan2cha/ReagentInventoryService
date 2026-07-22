@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
 import { addDateOnlyDays, dateOnlyUtc, daysUntilDateOnly, koreaDateKey } from "@/lib/date";
 import { findAllergen, findClient, formatDate, lots, orderItemSummary, orders } from "../reagent-data";
-import { lotStatus, type LotStatus, type OrderStatus } from "../reagent-data";
+import { lotStatus, type LotStatus, type OrderOriginLabel, type OrderStatus, type ShipmentFulfillmentLabel } from "../reagent-data";
 import { PAGE_SIZE,pageMeta,paginateRows,type PageMeta } from "@/lib/pagination";
 import { pendingShipmentOrderWhere } from "@/domain/pending-shipment";
 import type { ItemQuantity } from "../item-quantity-summary";
@@ -15,6 +15,7 @@ export type ShipmentOrderRow = {
   orderDate: string;
   items: string;
   itemDetails: ItemQuantity[];
+  origin: OrderOriginLabel;
   status: OrderStatus;
   source: "database" | "sample";
   allocationItems?: ShipmentAllocationItemRow[];
@@ -47,7 +48,7 @@ export type ShipmentHistoryRow = {
   shippedAt: string;
   itemSummary: string;
   itemDetails: ItemQuantity[];
-  status: "출고완료" | "취소";
+  status: ShipmentFulfillmentLabel;
   canCancel: boolean;
   source: "database" | "sample";
 };
@@ -61,6 +62,18 @@ function mapOrderStatus(status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANC
   } satisfies Record<typeof status, OrderStatus>;
 
   return map[status];
+}
+
+function mapOrderOrigin(origin: "MANUAL" | "SHORTAGE_REORDER"): OrderOriginLabel {
+  return origin === "SHORTAGE_REORDER" ? "부족분 재주문" : "직접 등록";
+}
+
+function mapShipmentFulfillmentStatus(
+  status: "SHIPPED" | "CANCELLED",
+  fulfillmentStatus: "NORMAL" | "PARTIAL"
+): ShipmentFulfillmentLabel {
+  if (status === "CANCELLED") return "취소";
+  return fulfillmentStatus === "PARTIAL" ? "부분 출고" : "정상 출고";
 }
 
 function statusFromDbLot(lot: {
@@ -89,6 +102,7 @@ function sampleShipmentOrders(): ShipmentOrderRow[] {
         orderDate: order.orderDate,
         items: orderItemSummary(order),
         itemDetails: order.items.map((item) => ({ code: findAllergen(item.allergenId)?.code ?? "-", quantity: item.quantity })),
+        origin: "직접 등록",
         status: order.status,
         source: "sample"
       };
@@ -233,6 +247,7 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
         orderDate: koreaDateKey(order.createdAt),
         items: order.items.map((item) => `${item.allergen.code} ${item.quantity}`).join(", "),
         itemDetails: order.items.map((item) => ({ code: item.allergen.code, quantity: item.quantity })),
+        origin: mapOrderOrigin(order.origin),
         status: mapOrderStatus(order.status),
         source: "database",
         allocationItems: order.items.map((item) => {
@@ -273,7 +288,7 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
           .map((item) => `${item.reagentLot.allergen.code} ${item.quantity}`)
           .join(", "),
         itemDetails: shipment.items.map((item) => ({ code: item.reagentLot.allergen.code, quantity: item.quantity })),
-        status: shipment.status === "SHIPPED" ? "출고완료" : "취소",
+        status: mapShipmentFulfillmentStatus(shipment.status, shipment.fulfillmentStatus),
         canCancel: shipment.status === "SHIPPED",
         source: "database"
       }))

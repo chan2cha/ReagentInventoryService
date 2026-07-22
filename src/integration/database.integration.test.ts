@@ -120,6 +120,7 @@ describe("database transactions", () => {
       }
       if (clientId) {
         await prisma.replacement.deleteMany({ where: { originalShipmentItem: { shipment: { order: { clientId } } } } });
+        await prisma.order.updateMany({ where: { clientId }, data: { shortageFromShipmentId: null } });
         await prisma.shipmentItem.deleteMany({ where: { shipment: { order: { clientId } } } });
         await prisma.shipment.deleteMany({ where: { order: { clientId } } });
         await prisma.orderItem.deleteMany({ where: { order: { clientId } } });
@@ -194,20 +195,33 @@ describe("database transactions", () => {
     ]);
   });
 
-  it("rolls back an insufficient shipment without stock or audit changes", async () => {
+  it("partially ships available stock and creates a shortage reorder", async () => {
     const order = await createOrder(10000);
     const before = await finishedGoodsTotal();
-    const auditCountBefore = await prisma.auditLog.count({
-      where: {
-        action: "SHIPMENT_CREATE",
-        actorId: userId
-      }
-    });
-    await expect(processShipment(prisma, order.id, userId, shipmentNow)).rejects.toThrow("INSUFFICIENT_STOCK");
+    const shipment = await processShipment(prisma, order.id, userId, shipmentNow);
     const after = await finishedGoodsTotal();
-    expect(after._sum.quantity).toBe(before._sum.quantity);
-    expect(await prisma.shipment.count({ where: { orderId: order.id } })).toBe(0);
-    expect(await prisma.auditLog.count({ where: { action: "SHIPMENT_CREATE", actorId: userId } })).toBe(auditCountBefore);
+    const shipmentItems = await prisma.shipmentItem.findMany({ where: { shipmentId: shipment.id } });
+    const shippedQuantity = shipmentItems.reduce((sum, item) => sum + item.quantity, 0);
+    const shortageOrder = await prisma.order.findUniqueOrThrow({
+      where: { shortageFromShipmentId: shipment.id },
+      include: { items: true }
+    });
+
+    expect(shipment.fulfillmentStatus).toBe("PARTIAL");
+    expect(shippedQuantity).toBeGreaterThan(0);
+    expect(after._sum.quantity).toBe((before._sum.quantity ?? 0) - shippedQuantity);
+    expect(shortageOrder).toMatchObject({
+      clientId,
+      status: "RECEIVED",
+      origin: "SHORTAGE_REORDER",
+      createdBy: userId
+    });
+    expect(shortageOrder.items).toEqual([expect.objectContaining({ allergenId, quantity: 10000 - shippedQuantity })]);
+    expect(await prisma.auditLog.count({ where: { action: "ORDER_CREATE_SHORTAGE_REORDER", entityId: shortageOrder.id } })).toBe(1);
+
+    await reverseShipment(prisma, shipment.id, userId, "partial shipment reversal");
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: shortageOrder.id } })).status).toBe("CANCELLED");
+    expect((await finishedGoodsTotal())._sum.quantity).toBe(before._sum.quantity);
   });
 
   it("restores lot quantities and order status when shipment is cancelled", async () => {

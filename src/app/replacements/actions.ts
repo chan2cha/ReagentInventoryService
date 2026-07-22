@@ -20,10 +20,10 @@ export async function confirmProactiveReplacement(data: FormData) {
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
     const messages: Record<string, string> = { REPLACEMENT_QUANTITY_INVALID: "확인 잔량은 1개 이상이어야 합니다.", REPLACEMENT_QUANTITY_EXCEEDS_SHIPMENT: "확인 잔량이 원출고 수량보다 많습니다.", REPLACEMENT_ALREADY_EXISTS: "이미 처리된 출고 품목입니다." };
-    await fail(messages[code] ?? "선제 교환 확정 중 오류가 발생했습니다.");
+    await fail(messages[code] ?? "교환 확정 중 오류가 발생했습니다.");
   }
   refresh();
-  await redirectWithFlash("/replacements", "success", "선제 교환 수량이 확정되었습니다.");
+  await redirectWithFlash("/replacements", "success", " 교환 수량이 확정되었습니다.");
 }
 
 export async function excludeProactiveReplacement(data: FormData) {
@@ -66,13 +66,13 @@ export async function updateReplacementPolicy(data: FormData) {
       });
       await tx.auditLog.create({ data: {
         action: "REPLACEMENT_POLICY_UPDATE", entityType: "REPLACEMENT_POLICY", entityId: REPLACEMENT_POLICY_ID,
-        description: `선제 교환 알림 ${detectionDays}일 전, 교환품 최소 잔여 유통기한 ${minimumDeliveryShelfDays}일`, actorId: user.id
+        description: ` 교환 알림 ${detectionDays}일 전, 교환품 최소 잔여 유통기한 ${minimumDeliveryShelfDays}일`, actorId: user.id
       }});
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "FORBIDDEN") return fail("선제 교환 기준 변경 권한이 없습니다.");
-    await fail("선제 교환 기준 저장 중 오류가 발생했습니다.");
+    if (error instanceof Error && error.message === "FORBIDDEN") return fail(" 교환 기준 변경 권한이 없습니다.");
+    await fail(" 교환 기준 저장 중 오류가 발생했습니다.");
   }
   refresh();
-  await redirectWithFlash("/replacements", "success", "선제 교환 기준이 저장되었습니다.");
+  await redirectWithFlash("/replacements", "success", " 교환 기준이 저장되었습니다.");
 }

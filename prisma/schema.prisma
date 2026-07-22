@@ -22,9 +22,19 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum OrderOrigin {
+  MANUAL
+  SHORTAGE_REORDER
+}
+
 enum ShipmentStatus {
   SHIPPED
   CANCELLED
+}
+
+enum ShipmentFulfillmentStatus {
+  NORMAL
+  PARTIAL
 }
 
 enum ShipmentPurpose {
@@ -158,19 +168,22 @@ model Client {
 }
 
 model Order {
-  id        String      @id @default(cuid())
-  orderNo   String      @unique
-  clientId  String
-  status    OrderStatus @default(RECEIVED)
-  memo      String?
-  createdBy String
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  client    Client      @relation(fields: [clientId], references: [id])
-  creator   User        @relation("OrderCreatedBy", fields: [createdBy], references: [id])
-  items     OrderItem[]
-  shipments Shipment[]
-  image     OrderImage?
+  id                    String      @id @default(cuid())
+  orderNo               String      @unique
+  clientId              String
+  status                OrderStatus @default(RECEIVED)
+  origin                OrderOrigin @default(MANUAL)
+  shortageFromShipmentId String?    @unique
+  memo                  String?
+  createdBy             String
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  client                Client      @relation(fields: [clientId], references: [id])
+  creator               User        @relation("OrderCreatedBy", fields: [createdBy], references: [id])
+  items                 OrderItem[]
+  shipments             Shipment[]
+  image                 OrderImage?
+  shortageFromShipment  Shipment?   @relation("ShipmentShortageReorder", fields: [shortageFromShipmentId], references: [id])
 
   @@index([clientId])
   @@index([status])
@@ -201,17 +214,19 @@ model OrderItem {
 }
 
 model Shipment {
-  id          String          @id @default(cuid())
-  orderId     String
-  status      ShipmentStatus  @default(SHIPPED)
-  purpose     ShipmentPurpose @default(ORDER)
-  shippedBy   String
-  shippedAt   DateTime        @default(now())
-  memo        String?
-  order       Order           @relation(fields: [orderId], references: [id])
-  shipper     User            @relation("ShipmentShippedBy", fields: [shippedBy], references: [id])
-  items       ShipmentItem[]
-  replacement Replacement?    @relation("ReplacementShipment")
+  id               String                    @id @default(cuid())
+  orderId          String
+  status           ShipmentStatus            @default(SHIPPED)
+  fulfillmentStatus ShipmentFulfillmentStatus @default(NORMAL)
+  purpose          ShipmentPurpose           @default(ORDER)
+  shippedBy        String
+  shippedAt        DateTime                  @default(now())
+  memo             String?
+  order            Order                     @relation(fields: [orderId], references: [id])
+  shipper          User                      @relation("ShipmentShippedBy", fields: [shippedBy], references: [id])
+  items            ShipmentItem[]
+  replacement      Replacement?              @relation("ReplacementShipment")
+  shortageReorder  Order?                    @relation("ShipmentShortageReorder")
 
   @@index([orderId])
   @@index([shippedAt])

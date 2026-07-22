@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { addDateOnlyDays, dateOnlyUtc, koreaDateKey } from "../lib/date";
 import { RetryableTransactionError, runSerializableTransaction } from "../lib/transaction";
+import { isOrderNumberConflict, nextOrderNo } from "./order-create-service";
 
 type RequestedItem = {
   allergenId: string;
@@ -13,6 +14,8 @@ type Allocation = {
   lotId: string;
   quantity: number;
 };
+
+type Shortage = RequestedItem;
 
 export type ShipmentAllocationInput = {
   lotId: string;
@@ -117,6 +120,7 @@ export async function processShipment(
     }
 
     const allocations: Allocation[] = [];
+    const shortages: Shortage[] = [];
 
     if (selectedAllocations) {
       const normalized = new Map<string, number>();
@@ -160,8 +164,16 @@ export async function processShipment(
       }
 
       for (const item of requestedByAllergen.values()) {
-        if (allocatedByAllergen.get(item.allergenId) !== item.quantity) {
+        const allocatedQuantity = allocatedByAllergen.get(item.allergenId) ?? 0;
+        if (allocatedQuantity > item.quantity) {
           throw new Error(`ALLOCATION_QUANTITY_MISMATCH:${item.allergenCode}`);
+        }
+
+        if (allocatedQuantity < item.quantity) {
+          shortages.push({
+            ...item,
+            quantity: item.quantity - allocatedQuantity
+          });
         }
       }
     } else {
@@ -198,8 +210,17 @@ export async function processShipment(
           });
         }
 
-        if (remaining > 0) throw new Error(`INSUFFICIENT_STOCK:${item.allergenCode}`);
+        if (remaining > 0) {
+          shortages.push({
+            ...item,
+            quantity: remaining
+          });
+        }
       }
+    }
+
+    if (allocations.length === 0) {
+      throw new Error("NO_ALLOCATIONS");
     }
 
     for (const allocation of allocations) {
@@ -234,6 +255,7 @@ export async function processShipment(
       data: {
         orderId: order.id,
         status: "SHIPPED",
+        fulfillmentStatus: shortages.length > 0 ? "PARTIAL" : "NORMAL",
         shippedBy: actorId,
         memo: selectedAllocations ? "관리자 LOT 배정 출고" : "유통기한 빠른 순 자동 출고"
       }
@@ -261,6 +283,48 @@ export async function processShipment(
       }))
     });
 
+    let shortageOrder: { id: string; orderNo: string } | null = null;
+    if (shortages.length > 0) {
+      try {
+        shortageOrder = await tx.order.create({
+          data: {
+            orderNo: await nextOrderNo(tx, now),
+            clientId: order.clientId,
+            status: "RECEIVED",
+            origin: "SHORTAGE_REORDER",
+            shortageFromShipmentId: shipment.id,
+            memo: `${order.orderNo} 재고 부족분 자동 재주문`,
+            createdBy: actorId,
+            items: {
+              createMany: {
+                data: shortages.map((shortage) => ({
+                  allergenId: shortage.allergenId,
+                  quantity: shortage.quantity
+                }))
+              }
+            }
+          }
+        });
+      } catch (error) {
+        if (isOrderNumberConflict(error)) {
+          throw new RetryableTransactionError();
+        }
+        throw error;
+      }
+    }
+
+    if (shortageOrder) {
+      await tx.auditLog.create({
+        data: {
+          action: "ORDER_CREATE_SHORTAGE_REORDER",
+          entityType: "ORDER",
+          entityId: shortageOrder.id,
+          description: `${order.orderNo} 부족분 재주문 생성: ${shortageOrder.orderNo}`,
+          actorId
+        }
+      });
+    }
+
     await tx.auditLog.create({
       data: {
         action: "SHIPMENT_CREATE",
@@ -271,7 +335,10 @@ export async function processShipment(
       }
     });
 
-    return shipment;
+    return {
+      ...shipment,
+      shortageOrder
+    };
   });
 }
 
@@ -288,7 +355,13 @@ export async function reverseShipment(
       },
       include: {
         items: true,
-        order: true
+        order: true,
+        shortageReorder: {
+          select: {
+            id: true,
+            status: true
+          }
+        }
       }
     });
 
@@ -371,6 +444,37 @@ export async function reverseShipment(
 
     if (releasedOrder.count !== 1) {
       throw new RetryableTransactionError();
+    }
+
+    if (
+      shipment.shortageReorder &&
+      (shipment.shortageReorder.status === "RECEIVED" || shipment.shortageReorder.status === "READY_TO_SHIP")
+    ) {
+      const cancelledShortageOrder = await tx.order.updateMany({
+        where: {
+          id: shipment.shortageReorder.id,
+          status: {
+            in: ["RECEIVED", "READY_TO_SHIP"]
+          }
+        },
+        data: {
+          status: "CANCELLED"
+        }
+      });
+
+      if (cancelledShortageOrder.count !== 1) {
+        throw new RetryableTransactionError();
+      }
+
+      await tx.auditLog.create({
+        data: {
+          action: "ORDER_CANCEL_SHORTAGE_REORDER",
+          entityType: "ORDER",
+          entityId: shipment.shortageReorder.id,
+          description: `${shipment.order.orderNo} 출고 취소로 부족분 재주문 취소`,
+          actorId
+        }
+      });
     }
 
     await tx.auditLog.create({

@@ -45,8 +45,10 @@ export async function confirmShipment(formData: FormData) {
     if (quantity > 0) allocations.push({ lotId, quantity });
   }
 
+  let shortageOrderNo: string | null = null;
   try {
-    await processShipment(prisma, orderId, user.id, undefined, allocations);
+    const shipment = await processShipment(prisma, orderId, user.id, undefined, allocations);
+    shortageOrderNo = shipment.shortageOrder?.orderNo ?? null;
   } catch (error) {
     unstable_rethrow(error);
 
@@ -69,6 +71,10 @@ export async function confirmShipment(formData: FormData) {
     if (error instanceof Error && error.message.startsWith("INSUFFICIENT_STOCK:")) {
       const code = error.message.split(":")[1];
       await fail(`${code} 시약의 출고 가능 재고가 부족합니다.`);
+    }
+
+    if (error instanceof Error && error.message === "NO_ALLOCATIONS") {
+      await fail("출고 가능한 재고가 없습니다. 재고를 입고한 후 다시 시도해 주세요.");
     }
 
     if (error instanceof Error && error.message.startsWith("ALLOCATION_QUANTITY_MISMATCH:")) {
@@ -96,7 +102,13 @@ export async function confirmShipment(formData: FormData) {
   revalidatePath("/movements");
   revalidatePath("/orders");
   revalidatePath("/shipments");
-  await redirectWithFlash("/shipments", "success", "LOT별 배정으로 출고 처리가 완료되었습니다.");
+  await redirectWithFlash(
+    "/shipments",
+    "success",
+    shortageOrderNo
+      ? `부분 출고가 완료되었고 부족분 재주문 ${shortageOrderNo}이 생성되었습니다.`
+      : "정상 출고가 완료되었습니다."
+  );
 }
 
 export async function cancelShipment(formData: FormData) {

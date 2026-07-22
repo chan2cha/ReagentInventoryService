@@ -1,4 +1,5 @@
 import { loadEnvConfig } from "@next/env";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 // Vitest does not expose arbitrary .env keys on process.env by default. Load the
@@ -7,6 +8,11 @@ import { defineConfig } from "vitest/config";
 loadEnvConfig(process.cwd());
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url))
+    }
+  },
   test: {
     globals: true,
     environment: "node",

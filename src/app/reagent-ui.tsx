@@ -34,7 +34,9 @@ import {
   orders,
   today,
   type LotStatus,
-  type OrderStatus
+  type OrderOriginLabel,
+  type OrderStatus,
+  type ShipmentFulfillmentLabel
 } from "./reagent-data";
 
 type ShellProps = {
@@ -71,7 +73,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/orders", label: "주문 관리", icon: ClipboardList },
       { href: "/shipments", label: "출고 처리", icon: PackageCheck },
-      { href: "/replacements", label: "선제 교환", icon: RefreshCw, capability: "SHIPMENT_WRITE" }
+      { href: "/replacements", label: "사후 관리", icon: RefreshCw, capability: "SHIPMENT_WRITE" }
     ]
   },
   {
@@ -149,7 +151,7 @@ export async function AppShell({ active, title, description, action, actionHref,
                           </em>
                         ) : null}
                         {item.href === "/replacements" && replacementCandidateBadge ? (
-                          <em aria-label={`선제 교환 확인 대상 ${sidebarData.replacementCandidates}건`} title={`선제 교환 확인 대상 ${sidebarData.replacementCandidates}건`}>
+                          <em aria-label={`교환 확인 대상 ${sidebarData.replacementCandidates}건`} title={`선제 교환 확인 대상 ${sidebarData.replacementCandidates}건`}>
                             {replacementCandidateBadge}
                           </em>
                         ) : null}
@@ -225,7 +227,7 @@ export function StatGrid({
   );
 }
 
-export function StatusBadge({ status }: { status: LotStatus | OrderStatus | StockMovementLabel }) {
+export function StatusBadge({ status }: { status: LotStatus | OrderStatus | OrderOriginLabel | ShipmentFulfillmentLabel | StockMovementLabel }) {
   const className = {
     정상: "ok",
     재고부족: "warn",
@@ -235,6 +237,10 @@ export function StatusBadge({ status }: { status: LotStatus | OrderStatus | Stoc
     접수: "info",
     준비중: "warn",
     출고완료: "ok",
+    "정상 출고": "ok",
+    "부분 출고": "warn",
+    "직접 등록": "info",
+    "부족분 재주문": "warn",
     취소: "muted",
     입고: "info",
     출고: "ok",

@@ -49,6 +49,7 @@ export default async function ShipmentsPage({
                 <th>거래처</th>
                 <th>주문일</th>
                 <th>품목</th>
+                <th>등록 구분</th>
                 <th>상태</th>
                 {canWrite ? <th>처리</th> : null}
               </tr>
@@ -65,36 +66,19 @@ export default async function ShipmentsPage({
                   </td>
                   <td>{formatDate(order.orderDate)}</td>
                   <td><ItemQuantitySummary items={order.itemDetails} /></td>
+                  <td><StatusBadge status={order.origin} /></td>
                   <td><StatusBadge status={order.status} /></td>
                   {canWrite ? <td><ShipmentAllocationDialog order={order} /></td> : null}
                 </tr>
               ))}
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={canWrite ? 6 : 5}>출고 대기 주문이 없습니다.</td>
+                  <td colSpan={canWrite ? 7 : 6}>출고 대기 주문이 없습니다.</td>
                 </tr>
               ) : null}
             </tbody>
           </Table>
           <Pagination page={data.orderMeta.page} paramName="ordersPage" pathname="/shipments" preserve={{ordersQ:params?.ordersQ,historyPage:params?.historyPage,historyQ:params?.historyQ}} total={data.orderMeta.total} totalPages={data.orderMeta.totalPages} />
-        </Panel>
-
-        <Panel title="추천 재고" note={`${shipmentSourceLabel(recommendedLots)} · 유통기한 빠른 순`}>
-          <div className="split-list">
-            {recommendedLots.map((lot) => (
-              <div className="split-row" key={lot.id}>
-                <div>
-                  <strong>{lot.allergenCode}</strong>
-                  <span>{lot.allergenName}</span>
-                  <span>{lot.lotNo} · {formatDate(lot.expirationDate)} · {lot.currentQuantity}개</span>
-                </div>
-                <StatusBadge status={lot.status} />
-              </div>
-            ))}
-            {recommendedLots.length === 0 ? (
-              <div className="empty-state">출고 가능한 재고가 없습니다.</div>
-            ) : null}
-          </div>
         </Panel>
       </div>
 
@@ -140,7 +124,6 @@ export default async function ShipmentsPage({
           </Table>
           <Pagination page={data.historyMeta.page} paramName="historyPage" pathname="/shipments" preserve={{ordersPage:params?.ordersPage,ordersQ:params?.ordersQ,historyQ:params?.historyQ}} total={data.historyMeta.total} totalPages={data.historyMeta.totalPages} />
         </Panel>
-
       </div>
     </AppShell>
   );
