@@ -4,8 +4,6 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {
@@ -46,6 +44,11 @@ enum ReplacementStatus {
   CONFIRMED
   COMPLETED
   EXCLUDED
+}
+
+enum ReplacementOrigin {
+  EXPIRY
+  PRODUCT_DEFECT
 }
 
 enum ReturnDisposition {
@@ -103,7 +106,6 @@ model Allergen {
   code       String       @unique
   name       String
   category   String?
-  minStock   Int          @default(0)
   isActive   Boolean      @default(true)
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
@@ -261,6 +263,8 @@ model Replacement {
   replacementNo          String             @unique
   originalShipmentItemId String             @unique
   confirmedQuantity      Int
+  origin                 ReplacementOrigin  @default(EXPIRY)
+  reason                 String?
   status                 ReplacementStatus  @default(CONFIRMED)
   returnDisposition      ReturnDisposition?
   exclusionReason        String?

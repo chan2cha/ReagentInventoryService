@@ -10,6 +10,7 @@ describe("OrderImageInput", () => {
     expect(markup).toContain('name="image"');
     expect(markup).toContain('type="file"');
     expect(markup).toContain(`accept="${ORDER_IMAGE_ACCEPT}"`);
+    expect(markup).not.toContain("required");
     expect(markup).toContain("JPG, PNG, WebP");
     expect(markup).toContain("최대 3MB");
     expect(markup).toContain("이미지 선택");

@@ -1,3 +1,4 @@
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
@@ -5,33 +6,47 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 export function runtimeDatabaseUrl(url: string | undefined) {
-  if (!url || !url.includes(":6543")) return url;
+  if (!url || !url.includes(":6543")) {
+    return url;
+  }
 
-  const additions: string[] = [];
-  if (!url.includes("pgbouncer=")) additions.push("pgbouncer=true");
-  if (!url.includes("connection_limit=")) additions.push("connection_limit=3");
-  if (!url.includes("pool_timeout=")) additions.push("pool_timeout=30");
-  if (additions.length === 0) return url;
-  return `${url}${url.includes("?") ? "&" : "?"}${additions.join("&")}`;
+  // Supabase Transaction Pooler 사용 시 추가
+  if (!url.includes("pgbouncer=")) {
+    return `${url}${url.includes("?") ? "&" : "?"}pgbouncer=true`;
+  }
+
+  return url;
 }
 
 function createPrismaClient() {
-  const url = runtimeDatabaseUrl(process.env.DATABASE_URL);
+  const connectionString = runtimeDatabaseUrl(
+    process.env.DATABASE_URL
+  );
 
-  if (!url) {
-    return new PrismaClient();
+  if (!connectionString) {
+    throw new Error("DATABASE_URL 환경변수가 설정되지 않았습니다.");
   }
 
+  const adapter = new PrismaPg({
+    connectionString,
+
+    // 기존 connection_limit=3에 대응
+    max: 3,
+
+    // 기존 pool_timeout=30에 대응
+    connectionTimeoutMillis: 30_000,
+
+    // 선택 사항: 사용하지 않는 연결 정리
+    idleTimeoutMillis: 10_000,
+  });
+
   return new PrismaClient({
-    datasources: {
-      db: {
-        url
-      }
-    }
+    adapter,
   });
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+export const prisma =
+  globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;

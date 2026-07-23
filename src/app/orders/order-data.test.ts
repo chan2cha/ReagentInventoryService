@@ -49,7 +49,7 @@ describe("getOrderRows", () => {
       expect.objectContaining({
         id: "order-1",
         image: { fileName: "order.png", byteSize: 2048 },
-        origin: "직접 등록"
+        origin: "신규주문"
       })
     ]);
 
@@ -68,6 +68,7 @@ describe("getOrderRows", () => {
 
     expect(mocks.count).toHaveBeenCalledWith({
       where: expect.objectContaining({
+        origin: "MANUAL",
         OR: expect.any(Array),
         createdAt: {
           gte: new Date("2026-07-20T15:00:00.000Z"),

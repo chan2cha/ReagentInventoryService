@@ -97,4 +97,19 @@ describe("create order action", () => {
       })
     );
   });
+
+  it("submits without an image when the browser sends an empty file placeholder", async () => {
+    const data = new FormData();
+    data.set("clientId", "client-1");
+    data.append("allergenId", "allergen-1");
+    data.append("quantity", "1");
+    data.set("image", new File([], "placeholder", { type: "application/octet-stream" }));
+
+    await captureThrown(createOrder(data));
+
+    expect(mocks.createOrderValue).toHaveBeenCalledWith(
+      { kind: "test-db" },
+      expect.not.objectContaining({ image: expect.anything() })
+    );
+  });
 });

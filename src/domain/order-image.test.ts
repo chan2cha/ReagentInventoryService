@@ -23,6 +23,8 @@ describe("order image upload", () => {
 
   it("treats the browser's empty file value as no optional attachment", async () => {
     await expect(parseOrderImageUpload(new File([], ""))).resolves.toBeNull();
+    await expect(parseOrderImageUpload(new File([], "placeholder", { type: "application/octet-stream" })))
+      .resolves.toBeNull();
   });
 
   it("rejects unsupported types and oversized files from metadata", () => {

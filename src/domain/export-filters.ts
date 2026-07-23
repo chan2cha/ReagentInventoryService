@@ -150,14 +150,7 @@ function lotStatusCandidateWhere(
 
   return {
     quantity: { not: 0 },
-    reagentLot: {
-      is: {
-        expirationDate: { gte: afterExpiring },
-        ...(status === "LOW_STOCK"
-          ? { allergen: { is: { minStock: { gt: 0 } } } }
-          : {})
-      }
-    }
+    reagentLot: { is: { expirationDate: { gte: afterExpiring } } }
   };
 }
 

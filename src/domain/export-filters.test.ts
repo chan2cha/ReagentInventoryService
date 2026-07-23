@@ -16,7 +16,7 @@ describe("export query filters", () => {
     const now = new Date("2026-07-13T03:00:00.000Z");
     expect(buildWarehouseStockWhere({
       q: " EGG ",
-      status: "LOW_STOCK",
+      status: "NORMAL",
       warehouse: "FINISHED_GOODS"
     }, now)).toEqual({
       AND: [
@@ -24,8 +24,7 @@ describe("export query filters", () => {
         {
           quantity: { not: 0 },
           reagentLot: { is: {
-            expirationDate: { gte: new Date("2026-08-13T00:00:00.000Z") },
-            allergen: { is: { minStock: { gt: 0 } } }
+            expirationDate: { gte: new Date("2026-08-13T00:00:00.000Z") }
           } }
         },
         { warehouse: "FINISHED_GOODS" }
@@ -37,12 +36,12 @@ describe("export query filters", () => {
       .toThrow("EXPORT_FILTER_WAREHOUSE_INVALID");
 
     expect([
-      lotStatusKindFromSnapshot({ currentQuantity: 0, expirationDate: "2026-07-12", minStock: 5 }, now),
-      lotStatusKindFromSnapshot({ currentQuantity: 0, expirationDate: "2026-07-13", minStock: 5 }, now),
-      lotStatusKindFromSnapshot({ currentQuantity: 1, expirationDate: "2026-08-12", minStock: 5 }, now),
-      lotStatusKindFromSnapshot({ currentQuantity: 1, expirationDate: "2026-08-13", minStock: 5 }, now),
-      lotStatusKindFromSnapshot({ currentQuantity: 5, expirationDate: "2026-08-13", minStock: 5 }, now)
-    ]).toEqual(["EXPIRED", "OUT_OF_STOCK", "EXPIRING", "LOW_STOCK", "NORMAL"]);
+      lotStatusKindFromSnapshot({ currentQuantity: 0, expirationDate: "2026-07-12" }, now),
+      lotStatusKindFromSnapshot({ currentQuantity: 0, expirationDate: "2026-07-13" }, now),
+      lotStatusKindFromSnapshot({ currentQuantity: 1, expirationDate: "2026-08-12" }, now),
+      lotStatusKindFromSnapshot({ currentQuantity: 1, expirationDate: "2026-08-13" }, now),
+      lotStatusKindFromSnapshot({ currentQuantity: 5, expirationDate: "2026-08-13" }, now)
+    ]).toEqual(["EXPIRED", "OUT_OF_STOCK", "EXPIRING", "NORMAL", "NORMAL"]);
   });
 
   it("combines movement search, kind, and inclusive Korean calendar dates", () => {

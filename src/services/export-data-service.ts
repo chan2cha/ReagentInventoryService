@@ -13,8 +13,6 @@ import {
 } from "../domain/export-filters";
 import {
   lotStatusFromSnapshot,
-  lotStatusRequiresCrossModelComparison,
-  type LotStatusKind,
   type LotStatusLabel
 } from "../domain/lot-status";
 import {
@@ -24,10 +22,6 @@ import {
   type StockMovementLabel
 } from "../domain/stock-movement-presentation";
 import type { WarehouseKind } from "../domain/warehouse";
-import {
-  listStatusFilteredLots,
-  type StatusFilteredLotRecord
-} from "./status-filtered-lot-query";
 
 export const EXPORT_ROW_LIMIT = 10_000;
 export const EXPORT_QUERY_TAKE = EXPORT_ROW_LIMIT + 1;
@@ -45,9 +39,7 @@ export type LotExportRow = {
   receivedDate: Date;
   expirationDate: Date;
   warehouse: WarehouseKind;
-  initialQuantity: number;
   currentQuantity: number;
-  minStock: number;
   status: LotExportStatus;
   isActive: boolean;
   memo: string | null;
@@ -112,15 +104,13 @@ const lotExportSelect = {
       lotNo: true,
       receivedDate: true,
       expirationDate: true,
-      initialQuantity: true,
       memo: true,
       isActive: true,
       allergen: {
         select: {
           code: true,
           name: true,
-          category: true,
-          minStock: true
+          category: true
         }
       }
     }
@@ -206,8 +196,7 @@ const lotExportOrder = [
 function lotStatusSnapshot(lot: LotExportRecord) {
   return {
     currentQuantity: lot.quantity,
-    expirationDate: lot.reagentLot.expirationDate,
-    minStock: lot.reagentLot.allergen.minStock
+    expirationDate: lot.reagentLot.expirationDate
   };
 }
 
@@ -235,21 +224,9 @@ export async function listLotExportRows(
   options: LotExportOptions = {}
 ): Promise<LotExportRow[]> {
   const { now = new Date(), ...filters } = options;
-  const status = normalizedLotStatus(filters.status);
-  const warehouse = normalizedWarehouse(filters.warehouse);
+  normalizedLotStatus(filters.status);
+  normalizedWarehouse(filters.warehouse);
   const where = buildWarehouseStockWhere(filters, now);
-  if (status && lotStatusRequiresCrossModelComparison(status)) {
-    const records = await listStatusFilteredLots(db, {
-      q: filters.q,
-      status,
-      now,
-      warehouse,
-      take: EXPORT_QUERY_TAKE
-    });
-    assertWithinExportLimit("lots", records.length);
-
-    return records.map((record) => statusFilteredRecordToExportRow(record, now));
-  }
 
   const lots = await db.warehouseStock.findMany({
         where,
@@ -268,38 +245,11 @@ export async function listLotExportRows(
     receivedDate: lot.reagentLot.receivedDate,
     expirationDate: lot.reagentLot.expirationDate,
     warehouse: lot.warehouse,
-    initialQuantity: lot.reagentLot.initialQuantity,
     currentQuantity: lot.quantity,
-    minStock: lot.reagentLot.allergen.minStock,
     status: lotStatusFromSnapshot(lotStatusSnapshot(lot), now),
     isActive: lot.reagentLot.isActive,
     memo: lot.reagentLot.memo
   }));
-}
-
-function statusFilteredRecordToExportRow(
-  record: StatusFilteredLotRecord,
-  now: Date
-): LotExportRow {
-  return {
-    allergenCode: record.allergenCode,
-    allergenName: record.allergenName,
-    category: record.allergenCategory,
-    lotNo: record.lotNo,
-    receivedDate: record.receivedDate,
-    expirationDate: record.expirationDate,
-    warehouse: record.warehouse,
-    initialQuantity: record.initialQuantity,
-    currentQuantity: record.currentQuantity,
-    minStock: record.minStock,
-    status: lotStatusFromSnapshot({
-      currentQuantity: record.currentQuantity,
-      expirationDate: record.expirationDate,
-      minStock: record.minStock
-    }, now),
-    isActive: record.isActive,
-    memo: record.memo
-  };
 }
 
 export async function listMovementExportRows(

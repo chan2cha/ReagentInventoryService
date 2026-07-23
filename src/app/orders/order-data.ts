@@ -48,7 +48,7 @@ function sampleOrderRows(): OrderRow[] {
       itemDetails: order.items.map((item) => ({ code: findAllergen(item.allergenId)?.code ?? "-", quantity: item.quantity })),
       memo: order.memo || "-",
       image: null,
-      origin: "직접 등록",
+      origin: "신규주문",
       status: order.status,
       canCancel: order.status === "접수" || order.status === "준비중",
       source: "sample"
@@ -68,7 +68,7 @@ function mapOrderStatus(status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANC
 }
 
 function mapOrderOrigin(origin: "MANUAL" | "SHORTAGE_REORDER"): OrderOriginLabel {
-  return origin === "SHORTAGE_REORDER" ? "부족분 재주문" : "직접 등록";
+  return origin === "SHORTAGE_REORDER" ? "출고예정" : "신규주문";
 }
 
 export async function getOrderRows(
@@ -78,7 +78,10 @@ export async function getOrderRows(
   to = ""
 ): Promise<PaginatedResult<OrderRow>> {
   try {
-    const where = buildOrderWhere({ q, from, to });
+    const where = {
+      ...buildOrderWhere({ q, from, to }),
+      origin: "MANUAL"
+    } satisfies Prisma.OrderWhereInput;
     const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
     const orderQuery = {
       where,

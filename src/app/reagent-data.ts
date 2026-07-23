@@ -1,8 +1,8 @@
 import type { WarehouseKind } from "@/domain/warehouse";
 
-export type LotStatus = "정상" | "재고부족" | "품절" | "유통기한 임박" | "유통기한 만료";
+export type LotStatus = "정상" | "품절" | "유통기한 임박" | "유통기한 만료";
 export type OrderStatus = "접수" | "준비중" | "출고완료" | "취소";
-export type OrderOriginLabel = "직접 등록" | "부족분 재주문";
+export type OrderOriginLabel = "신규주문" | "출고예정";
 export type ShipmentFulfillmentLabel = "정상 출고" | "부분 출고" | "취소";
 export type MovementType = "입고" | "출고" | "조정" | "폐기" | "창고이동";
 
@@ -11,7 +11,6 @@ export type Allergen = {
   code: string;
   name: string;
   category: string;
-  minStock: number;
   active: boolean;
 };
 
@@ -58,16 +57,16 @@ export type Movement = {
 export const today = koreaDateKey();
 
 export const allergens: Allergen[] = [
-  { id: 1, code: "HDM-D1", name: "집먼지 진드기 D.pteronyssinus", category: "흡입성", minStock: 10, active: true },
-  { id: 2, code: "HDM-D2", name: "집먼지 진드기 D.farinae", category: "흡입성", minStock: 10, active: true },
-  { id: 3, code: "DOG-01", name: "개 비듬", category: "흡입성", minStock: 8, active: true },
-  { id: 4, code: "CAT-01", name: "고양이 비듬", category: "흡입성", minStock: 8, active: true },
-  { id: 5, code: "GRS-01", name: "잔디 꽃가루 혼합", category: "흡입성", minStock: 6, active: true },
-  { id: 6, code: "MLK-01", name: "우유", category: "식품성", minStock: 12, active: true },
-  { id: 7, code: "EGG-01", name: "난백", category: "식품성", minStock: 12, active: true },
-  { id: 8, code: "PNT-01", name: "땅콩", category: "식품성", minStock: 10, active: true },
-  { id: 9, code: "SHR-01", name: "새우", category: "식품성", minStock: 8, active: true },
-  { id: 10, code: "WHT-01", name: "밀가루", category: "식품성", minStock: 10, active: true }
+  { id: 1, code: "HDM-D1", name: "집먼지 진드기 D.pteronyssinus", category: "흡입성", active: true },
+  { id: 2, code: "HDM-D2", name: "집먼지 진드기 D.farinae", category: "흡입성", active: true },
+  { id: 3, code: "DOG-01", name: "개 비듬", category: "흡입성", active: true },
+  { id: 4, code: "CAT-01", name: "고양이 비듬", category: "흡입성", active: true },
+  { id: 5, code: "GRS-01", name: "잔디 꽃가루 혼합", category: "흡입성", active: true },
+  { id: 6, code: "MLK-01", name: "우유", category: "식품성", active: true },
+  { id: 7, code: "EGG-01", name: "난백", category: "식품성", active: true },
+  { id: 8, code: "PNT-01", name: "땅콩", category: "식품성", active: true },
+  { id: 9, code: "SHR-01", name: "새우", category: "식품성", active: true },
+  { id: 10, code: "WHT-01", name: "밀가루", category: "식품성", active: true }
 ];
 
 export const lots: Lot[] = [
@@ -134,7 +133,6 @@ export function lotStatus(lot: Lot): LotStatus {
   if (days < 0) return "유통기한 만료";
   if (lot.quantity === 0) return "품절";
   if (days <= 30) return "유통기한 임박";
-  if (allergen && lot.quantity < allergen.minStock) return "재고부족";
   return "정상";
 }
 
@@ -151,7 +149,6 @@ export const dashboard = {
   expiringLots: lots.filter((lot) => {
     const days = daysUntil(lot.expirationDate);
     return days >= 0 && days <= 30;
-  }).length,
-  lowLots: lots.filter((lot) => ["재고부족", "품절"].includes(lotStatus(lot))).length
+  }).length
 };
 import { daysUntilDateOnly, koreaDateKey } from "@/lib/date";

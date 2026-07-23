@@ -54,7 +54,6 @@ export type DashboardData = {
     pendingShipments: number;
     todayShipments: number;
     expiringLots: number;
-    lowLots: number;
   };
   priorityLots: DashboardLotRow[];
   orderSummary: DashboardOrderRow[];
@@ -94,16 +93,12 @@ function mapMovementType(type: "IN" | "OUT" | "ADJUST" | "DISPOSE" | "REVERSE" |
 function statusFromDbLot(lot: {
   quantity: number;
   expirationDate: Date;
-  allergen: {
-    minStock: number;
-  };
 }): LotStatus {
   const days = daysUntilDateOnly(lot.expirationDate);
 
   if (days < 0) return "유통기한 만료";
   if (lot.quantity === 0) return "품절";
   if (days <= 30) return "유통기한 임박";
-  if (lot.allergen.minStock > 0 && lot.quantity < lot.allergen.minStock) return "재고부족";
   return "정상";
 }
 
@@ -163,7 +158,6 @@ export async function getDashboardData(): Promise<DashboardData> {
       pendingShipments,
       todayShipments,
       expiringLots,
-      stockPolicyStocks,
       priorityStocks,
       orderSummary,
       recentMovements,
@@ -192,19 +186,6 @@ export async function getDashboardData(): Promise<DashboardData> {
             expirationDate: { gte: expiringFrom, lt: expiringTo },
             isActive: true
           } }
-        }
-      }),
-      prisma.warehouseStock.findMany({
-        where: {
-          warehouse: "FINISHED_GOODS",
-          reagentLot: { is: {
-            allergen: { is: { minStock: { gt: 0 } } },
-            isActive: true
-          } }
-        },
-        select: {
-          quantity: true,
-          reagentLot: { select: { allergen: { select: { minStock: true } } } }
         }
       }),
       prisma.warehouseStock.findMany({
@@ -256,10 +237,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         todayOrders,
         pendingShipments,
         todayShipments,
-        expiringLots,
-        lowLots: stockPolicyStocks.filter((stock) => (
-          stock.quantity < stock.reagentLot.allergen.minStock
-        )).length
+        expiringLots
       },
       priorityLots: priorityStocks.map((stock) => ({
         id: `${stock.reagentLotId}:${stock.warehouse}`,
@@ -269,8 +247,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         quantity: stock.quantity,
         status: statusFromDbLot({
           quantity: stock.quantity,
-          expirationDate: stock.reagentLot.expirationDate,
-          allergen: stock.reagentLot.allergen
+          expirationDate: stock.reagentLot.expirationDate
         }),
         source: "database"
       })),

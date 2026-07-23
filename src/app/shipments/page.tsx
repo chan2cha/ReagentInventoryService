@@ -11,15 +11,28 @@ import { getFlashMessage } from "@/lib/flash-message";
 import { OperationGuide, guideIcons } from "../operation-guide";
 import { ShipmentAllocationDialog } from "./shipment-allocation-dialog";
 import { ItemQuantitySummary } from "../item-quantity-summary";
+import { ProgressLink } from "../progress-link";
+import type { ShipmentOrderOrigin } from "./shipment-data";
 
 export const dynamic = "force-dynamic";
 
 export default async function ShipmentsPage({
   searchParams
 }: {
-  searchParams?: Promise<{ ordersPage?: string; historyPage?: string; ordersQ?: string; historyQ?: string }>;
+  searchParams?: Promise<{ ordersPage?: string; historyPage?: string; ordersQ?: string; historyQ?: string; ordersOrigin?: string }>;
 }) {
-  const params=await searchParams; const [user, data, flash] = await Promise.all([requireUser(), getShipmentPageData(parsePage(params?.ordersPage),parsePage(params?.historyPage),params?.ordersQ?.trim(),params?.historyQ?.trim()), getFlashMessage()]);
+  const params=await searchParams;
+  const ordersOrigin: ShipmentOrderOrigin = params?.ordersOrigin === "SHORTAGE_REORDER" ? "SHORTAGE_REORDER" : "MANUAL";
+  const orderTabHref = (origin: ShipmentOrderOrigin) => {
+    const query = new URLSearchParams({ ordersOrigin: origin });
+
+    if (params?.ordersQ) query.set("ordersQ", params.ordersQ);
+    if (params?.historyPage) query.set("historyPage", params.historyPage);
+    if (params?.historyQ) query.set("historyQ", params.historyQ);
+
+    return `/shipments?${query}` as never;
+  };
+  const [user, data, flash] = await Promise.all([requireUser(), getShipmentPageData(parsePage(params?.ordersPage),parsePage(params?.historyPage),params?.ordersQ?.trim(),params?.historyQ?.trim(),ordersOrigin), getFlashMessage()]);
   const { orders, recommendedLots, shipmentHistory } = data;
   const canWrite = can(user.role, "SHIPMENT_WRITE");
 
@@ -41,7 +54,11 @@ export default async function ShipmentsPage({
 
       <div className="dashboard-grid">
         <Panel title="출고 대기 주문" note={shipmentSourceLabel(orders)}>
-          <TableSearch pathname="/shipments" paramName="ordersQ" placeholder="주문번호, 거래처, 시약 검색" preserve={{ historyPage: params?.historyPage, historyQ: params?.historyQ }} value={params?.ordersQ} />
+          <nav aria-label="출고 대기 주문 구분" className="shipment-order-tabs">
+            <ProgressLink aria-current={ordersOrigin === "MANUAL" ? "page" : undefined} href={orderTabHref("MANUAL")}>신규주문</ProgressLink>
+            <ProgressLink aria-current={ordersOrigin === "SHORTAGE_REORDER" ? "page" : undefined} href={orderTabHref("SHORTAGE_REORDER")}>출고예정</ProgressLink>
+          </nav>
+          <TableSearch pathname="/shipments" paramName="ordersQ" placeholder="주문번호, 거래처, 시약 검색" preserve={{ ordersOrigin, historyPage: params?.historyPage, historyQ: params?.historyQ }} value={params?.ordersQ} />
           <Table>
             <thead>
               <tr>
@@ -78,13 +95,13 @@ export default async function ShipmentsPage({
               ) : null}
             </tbody>
           </Table>
-          <Pagination page={data.orderMeta.page} paramName="ordersPage" pathname="/shipments" preserve={{ordersQ:params?.ordersQ,historyPage:params?.historyPage,historyQ:params?.historyQ}} total={data.orderMeta.total} totalPages={data.orderMeta.totalPages} />
+          <Pagination page={data.orderMeta.page} paramName="ordersPage" pathname="/shipments" preserve={{ordersOrigin,ordersQ:params?.ordersQ,historyPage:params?.historyPage,historyQ:params?.historyQ}} total={data.orderMeta.total} totalPages={data.orderMeta.totalPages} />
         </Panel>
       </div>
 
       <div className="dashboard-grid lower">
         <Panel title="최근 출고 내역" note={shipmentSourceLabel(shipmentHistory)}>
-          <TableSearch pathname="/shipments" paramName="historyQ" placeholder="주문번호, 거래처, 시약 검색" preserve={{ ordersPage: params?.ordersPage, ordersQ: params?.ordersQ }} value={params?.historyQ} />
+          <TableSearch pathname="/shipments" paramName="historyQ" placeholder="주문번호, 거래처, 시약 검색" preserve={{ ordersOrigin, ordersPage: params?.ordersPage, ordersQ: params?.ordersQ }} value={params?.historyQ} />
           <Table>
             <thead>
               <tr>
@@ -122,7 +139,7 @@ export default async function ShipmentsPage({
               ) : null}
             </tbody>
           </Table>
-          <Pagination page={data.historyMeta.page} paramName="historyPage" pathname="/shipments" preserve={{ordersPage:params?.ordersPage,ordersQ:params?.ordersQ,historyQ:params?.historyQ}} total={data.historyMeta.total} totalPages={data.historyMeta.totalPages} />
+          <Pagination page={data.historyMeta.page} paramName="historyPage" pathname="/shipments" preserve={{ordersOrigin,ordersPage:params?.ordersPage,ordersQ:params?.ordersQ,historyQ:params?.historyQ}} total={data.historyMeta.total} totalPages={data.historyMeta.totalPages} />
         </Panel>
       </div>
     </AppShell>

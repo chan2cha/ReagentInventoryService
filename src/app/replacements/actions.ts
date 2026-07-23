@@ -5,11 +5,11 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { redirectWithFlash } from "@/lib/flash-message";
 import { prisma } from "@/lib/prisma";
-import { completeReplacement, confirmReplacement, REPLACEMENT_POLICY_ID } from "@/services/replacement-service";
+import { completeReplacement, confirmReplacement, registerDefectReplacement as registerDefectReplacementValue, REPLACEMENT_POLICY_ID } from "@/services/replacement-service";
 
 function value(data: FormData, key: string) { const entry = data.get(key); return typeof entry === "string" ? entry.trim() : ""; }
 async function fail(message: string): Promise<never> { return redirectWithFlash("/replacements", "error", message); }
-function refresh() { revalidatePath("/replacements"); revalidatePath("/lots"); revalidatePath("/movements"); }
+function refresh() { revalidatePath("/"); revalidatePath("/replacements"); revalidatePath("/lots"); revalidatePath("/movements"); }
 
 export async function confirmProactiveReplacement(data: FormData) {
   const shipmentItemId = value(data, "shipmentItemId");
@@ -24,6 +24,32 @@ export async function confirmProactiveReplacement(data: FormData) {
   }
   refresh();
   await redirectWithFlash("/replacements", "success", " 교환 수량이 확정되었습니다.");
+}
+
+export async function registerDefectReplacement(data: FormData) {
+  const shipmentItemId = value(data, "shipmentItemId");
+  const quantity = Number(value(data, "quantity"));
+  const reason = value(data, "reason");
+
+  try {
+    const user = await requireRole(["ADMIN"]);
+    await registerDefectReplacementValue(prisma, { shipmentItemId, quantity, reason, actorId: user.id });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    const messages: Record<string, string> = {
+      REPLACEMENT_REASON_REQUIRED: "제품 하자 사유를 입력하세요.",
+      REPLACEMENT_REASON_INVALID: "제품 하자 사유는 500자 이내로 입력하세요.",
+      REPLACEMENT_QUANTITY_INVALID: "교환 수량은 1개 이상이어야 합니다.",
+      REPLACEMENT_QUANTITY_EXCEEDS_SHIPMENT: "교환 수량이 기존 출고 수량보다 많습니다.",
+      ORIGINAL_SHIPMENT_ITEM_NOT_FOUND: "교환할 기존 출고 품목을 찾을 수 없습니다.",
+      REPLACEMENT_ALREADY_EXISTS: "이미 교환 처리된 출고 품목입니다.",
+      FORBIDDEN: "제품 하자 교환 등록 권한이 없습니다."
+    };
+    await fail(messages[code] ?? "제품 하자 교환 등록 중 오류가 발생했습니다.");
+  }
+
+  refresh();
+  await redirectWithFlash("/replacements", "success", "제품 하자 교환이 등록되었습니다.");
 }
 
 export async function excludeProactiveReplacement(data: FormData) {

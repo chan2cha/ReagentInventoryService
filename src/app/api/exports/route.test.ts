@@ -62,9 +62,7 @@ const lotRow = {
   warehouse: "FINISHED_GOODS" as const,
   receivedDate: new Date("2026-07-01T00:00:00.000Z"),
   expirationDate: new Date("2027-07-01T00:00:00.000Z"),
-  initialQuantity: 10,
   currentQuantity: 7,
-  minStock: 3,
   status: "정상",
   isActive: true,
   memo: "냉장"
@@ -152,7 +150,7 @@ describe("GET /api/exports", () => {
 
   it("builds and audits a filtered inventory workbook", async () => {
     const response = await GET(request(
-      "report=inventory&q=%20R-001%20&status=LOW_STOCK&warehouse=FINISHED_GOODS"
+      "report=inventory&q=%20R-001%20&status=NORMAL&warehouse=FINISHED_GOODS"
     ));
 
     expect(response.status).toBe(200);
@@ -166,7 +164,7 @@ describe("GET /api/exports", () => {
       expect.anything(),
       {
         q: "R-001",
-        status: "LOW_STOCK",
+        status: "NORMAL",
         warehouse: "FINISHED_GOODS",
         now: expect.any(Date)
       }
@@ -187,7 +185,7 @@ describe("GET /api/exports", () => {
         generatedBy: "관리자 (admin)",
         filters: [
           { label: "검색어", value: "R-001" },
-          { label: "상태", value: "재고부족" },
+          { label: "상태", value: "정상" },
           { label: "창고", value: "완제품" }
         ]
       })

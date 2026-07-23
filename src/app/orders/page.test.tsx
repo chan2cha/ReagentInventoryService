@@ -62,7 +62,7 @@ describe("OrdersPage image attachment", () => {
         itemDetails: [{ code: "R-001", quantity: 2 }],
         memo: "이미지 주문",
         image: { fileName: "order.png", byteSize: 2048 },
-        origin: "직접 등록",
+        origin: "신규주문",
         status: "접수",
         canCancel: true,
         source: "database"

@@ -11,17 +11,6 @@ async function fail(message: string): Promise<never> {
   return redirectWithFlash("/allergens", "error", message);
 }
 
-async function minStockValue(formData: FormData) {
-  const raw = formString(formData, "minStock");
-  const value = Number(raw);
-
-  if (!raw || !Number.isInteger(value) || value < 0) {
-    await fail("안전 수량은 0 이상의 정수로 입력하세요.");
-  }
-
-  return value;
-}
-
 async function ensureUniqueCode(code: string, excludeId?: string) {
   const duplicate = await prisma.allergen.findFirst({
     where: {
@@ -50,7 +39,6 @@ export async function createAllergen(formData: FormData) {
     const code = formString(formData, "code").toUpperCase();
     const name = formString(formData, "name");
     const category = formString(formData, "category");
-    const minStock = await minStockValue(formData);
 
     if (!code || !/^[A-Z0-9._-]{2,30}$/.test(code)) {
       await fail("시약 코드는 영문, 숫자, 점, 밑줄, 하이픈 조합 2~30자로 입력하세요.");
@@ -59,7 +47,7 @@ export async function createAllergen(formData: FormData) {
 
     await ensureUniqueCode(code);
     await prisma.allergen.create({
-      data: { code, name, category: category || null, minStock, isActive: true }
+      data: { code, name, category: category || null, isActive: true }
     });
   } catch (error) {
     if (error instanceof Error && error.message === "FORBIDDEN") await fail("시약 관리 권한이 없습니다.");
@@ -77,7 +65,6 @@ export async function updateAllergen(formData: FormData) {
     const code = formString(formData, "code").toUpperCase();
     const name = formString(formData, "name");
     const category = formString(formData, "category");
-    const minStock = await minStockValue(formData);
 
     if (!allergenId) await fail("수정할 시약을 찾을 수 없습니다.");
     if (!code || !/^[A-Z0-9._-]{2,30}$/.test(code)) await fail("올바른 시약 코드를 입력하세요.");
@@ -86,7 +73,7 @@ export async function updateAllergen(formData: FormData) {
     await ensureUniqueCode(code, allergenId);
     await prisma.allergen.update({
       where: { id: allergenId },
-      data: { code, name, category: category || null, minStock }
+      data: { code, name, category: category || null }
     });
   } catch (error) {
     if (error instanceof Error && error.message === "FORBIDDEN") await fail("시약 관리 권한이 없습니다.");

@@ -24,7 +24,6 @@ type InventoryManagementDialogProps = {
   expirationDate: string;
   lotId: string;
   lotNo: string;
-  minStock: number | null;
   warehouse: WarehouseKind;
   warehouses?: readonly WarehouseOption[];
   labelWarehouses?: readonly WarehouseOption[];
@@ -62,7 +61,6 @@ export function InventoryManagementDialog({
   expirationDate,
   lotId,
   lotNo,
-  minStock,
   warehouse,
   warehouses = [],
   labelWarehouses = warehouses
@@ -80,12 +78,6 @@ export function InventoryManagementDialog({
   const signedAdjustment = operation === "ADD" ? adjustmentQuantity : -adjustmentQuantity;
   const nextQuantity = currentQuantity + signedAdjustment;
   const exceedsStock = nextQuantity < 0;
-  const belowMinimum = (
-    !exceedsStock &&
-    minStock !== null &&
-    minStock > 0 &&
-    nextQuantity < minStock
-  );
   const adjustmentConfirmMessage = `${allergenName} ${lotNo} ${sourceLabel} 창고 재고를 ${adjustmentQuantity}개 ${operationDetail.button}하시겠습니까? 변경 후 수량은 ${nextQuantity}개입니다.`;
 
   const destinationLabel = warehouseLabel(destinationWarehouse, warehouses);
@@ -210,11 +202,10 @@ export function InventoryManagementDialog({
 
             <section
               aria-live="polite"
-              className={`stock-adjustment-preview${exceedsStock ? " danger" : belowMinimum ? " warning" : ""}`}
+              className={`stock-adjustment-preview${exceedsStock ? " danger" : ""}`}
             >
               <span>변경 후 수량</span><strong>{currentQuantity}개 → {nextQuantity}개</strong>
               {exceedsStock ? <p>현재 수량보다 많이 차감할 수 없습니다.</p> : null}
-              {belowMinimum ? <p>변경 후 안전 수량 {minStock}개 미만이 됩니다.</p> : null}
             </section>
 
             <div className="stock-adjustment-actions">

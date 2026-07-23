@@ -63,8 +63,6 @@ export default async function LotsPage({
                 <th>입고일</th>
                 <th>유통기한</th>
                 <th>현재 수량</th>
-                <th>LOT 최초 수량</th>
-                <th>안전 수량</th>
                 <th>상태</th>
                 {canWrite ? <th>관리</th> : null}
               </tr>
@@ -83,8 +81,6 @@ export default async function LotsPage({
                   <td>{formatDate(lot.receivedDate)}</td>
                   <td>{formatDate(lot.expirationDate)}</td>
                   <td>{lot.currentQuantity}</td>
-                  <td>{lot.initialQuantity}</td>
-                  <td>{lot.minStock ?? "-"}</td>
                   <td><StatusBadge status={lot.status} /></td>
                   {canWrite ? (
                     <td>
@@ -97,7 +93,6 @@ export default async function LotsPage({
                           expirationDate={formatDate(lot.expirationDate)}
                           lotId={lot.lotId}
                           lotNo={lot.lotNo}
-                          minStock={lot.minStock}
                           warehouse={lot.warehouse}
                           warehouses={warehouses}
                           labelWarehouses={warehouseLabels}

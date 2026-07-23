@@ -38,9 +38,7 @@ describe("buildExportWorkbook", () => {
         warehouse: "완제품",
         receivedDate: "2026-07-01",
         expirationDate: "2027-07-01",
-        initialQuantity: 12,
         currentQuantity: 7,
-        minStock: 3,
         status: "정상",
         isActive: true,
         memo: "=SUM(1,1)"
@@ -97,9 +95,7 @@ describe("buildExportWorkbook", () => {
       "창고",
       "입고일",
       "유통기한",
-      "LOT 최초 수량",
       "현재 수량",
-      "안전 수량",
       "상태",
       "활성 여부",
       "메모"
@@ -107,13 +103,11 @@ describe("buildExportWorkbook", () => {
     expect(inventory.getCell("E2").value).toBe("완제품");
     expect(inventory.getCell("F2").type).toBe(ExcelJS.ValueType.Date);
     expect(inventory.getCell("G2").type).toBe(ExcelJS.ValueType.Date);
-    expect(inventory.getCell("H2").type).toBe(ExcelJS.ValueType.Number);
-    expect(inventory.getCell("H2").value).toBe(12);
-    expect(inventory.getCell("I2").value).toBe(7);
-    expect(inventory.getCell("L2").value).toBe("활성");
-    expect(inventory.getCell("M2").type).toBe(ExcelJS.ValueType.String);
-    expect(inventory.getCell("M2").value).toBe("=SUM(1,1)");
-    expectFrozenHeaderAndFilter(inventory, 13);
+    expect(inventory.getCell("H2").value).toBe(7);
+    expect(inventory.getCell("J2").value).toBe("활성");
+    expect(inventory.getCell("K2").type).toBe(ExcelJS.ValueType.String);
+    expect(inventory.getCell("K2").value).toBe("=SUM(1,1)");
+    expectFrozenHeaderAndFilter(inventory, 11);
 
     const movements = workbook.getWorksheet("입출고이력")!;
     expect(rowValues(movements, 1)).toEqual([
@@ -184,7 +178,7 @@ describe("buildExportWorkbook", () => {
     const inventory = workbook.getWorksheet("재고현황")!;
     expect(inventory.rowCount).toBe(1);
     expect(inventory.getCell("A2").value).toBeNull();
-    expectFrozenHeaderAndFilter(inventory, 13);
+    expectFrozenHeaderAndFilter(inventory, 11);
   });
 
   it("creates an information plus movements workbook when movements are exported alone", async () => {

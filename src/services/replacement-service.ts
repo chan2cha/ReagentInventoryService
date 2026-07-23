@@ -26,9 +26,15 @@ export async function confirmReplacement(db: PrismaClient, input: {
   quantity: number;
   actorId: string;
   excludeReason?: string;
+  origin?: "EXPIRY" | "PRODUCT_DEFECT";
+  reason?: string;
   now?: Date;
 }) {
   if (!Number.isSafeInteger(input.quantity) || input.quantity < 1) throw new Error("REPLACEMENT_QUANTITY_INVALID");
+  const origin = input.origin ?? "EXPIRY";
+  const reason = input.reason?.trim() ?? "";
+  if (origin === "PRODUCT_DEFECT" && !reason) throw new Error("REPLACEMENT_REASON_REQUIRED");
+  if (reason.length > 500) throw new Error("REPLACEMENT_REASON_INVALID");
   return runSerializableTransaction(db, async (tx) => {
     const item = await tx.shipmentItem.findUnique({
       where: { id: input.shipmentItemId },
@@ -44,6 +50,8 @@ export async function confirmReplacement(db: PrismaClient, input: {
       replacementNo,
       originalShipmentItemId: item.id,
       confirmedQuantity: input.quantity,
+      origin,
+      reason: reason || null,
       status: excluded ? "EXCLUDED" : "CONFIRMED",
       exclusionReason: excluded ? input.excludeReason!.trim() : null,
       createdBy: input.actorId
@@ -51,10 +59,31 @@ export async function confirmReplacement(db: PrismaClient, input: {
     await tx.auditLog.create({ data: {
       action: excluded ? "REPLACEMENT_EXCLUDE" : "REPLACEMENT_CONFIRM",
       entityType: "REPLACEMENT", entityId: replacement.id,
-      description: excluded ? `${replacementNo} 교환 제외: ${input.excludeReason!.trim()}` : `${replacementNo} 교환 ${input.quantity}개 확정`,
+      description: excluded
+        ? `${replacementNo} 교환 제외: ${input.excludeReason!.trim()}`
+        : origin === "PRODUCT_DEFECT"
+          ? `${replacementNo} 제품 하자 교환 ${input.quantity}개 등록: ${reason}`
+          : `${replacementNo} 교환 ${input.quantity}개 확정`,
       actorId: input.actorId
     }});
     return replacement;
+  });
+}
+
+export async function registerDefectReplacement(db: PrismaClient, input: {
+  shipmentItemId: string;
+  quantity: number;
+  reason: string;
+  actorId: string;
+  now?: Date;
+}) {
+  return confirmReplacement(db, {
+    shipmentItemId: input.shipmentItemId,
+    quantity: input.quantity,
+    reason: input.reason,
+    actorId: input.actorId,
+    origin: "PRODUCT_DEFECT",
+    now: input.now
   });
 }
 

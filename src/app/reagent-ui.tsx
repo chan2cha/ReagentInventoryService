@@ -206,15 +206,13 @@ export function StatGrid({
     pendingShipments: number;
     todayShipments: number;
     expiringLots: number;
-    lowLots: number;
   };
 }) {
   const items = [
     ["오늘 주문", stats.todayOrders],
     ["출고 대기", stats.pendingShipments],
     ["오늘 출고", stats.todayShipments],
-    ["곧 만료", stats.expiringLots],
-    ["재고 부족", stats.lowLots]
+    ["곧 만료", stats.expiringLots]
   ];
 
   return (
@@ -232,7 +230,6 @@ export function StatGrid({
 export function StatusBadge({ status }: { status: LotStatus | OrderStatus | OrderOriginLabel | ShipmentFulfillmentLabel | StockMovementLabel }) {
   const className = {
     정상: "ok",
-    재고부족: "warn",
     품절: "danger",
     "유통기한 임박": "warn",
     "유통기한 만료": "danger",
@@ -241,8 +238,8 @@ export function StatusBadge({ status }: { status: LotStatus | OrderStatus | Orde
     출고완료: "ok",
     "정상 출고": "ok",
     "부분 출고": "warn",
-    "직접 등록": "info",
-    "부족분 재주문": "warn",
+    신규주문: "info",
+    출고예정: "warn",
     취소: "muted",
     입고: "info",
     출고: "ok",

@@ -26,9 +26,7 @@ export type InventoryExportRow = {
   warehouse: string;
   receivedDate: Date | string;
   expirationDate: Date | string;
-  initialQuantity: number;
   currentQuantity: number;
-  minStock?: number | null;
   status: string;
   isActive?: boolean;
   memo?: string | null;
@@ -220,9 +218,7 @@ function addInventorySheet(workbook: ExcelJS.Workbook, rows: readonly InventoryE
     { header: "창고", key: "warehouse", width: 14 },
     { header: "입고일", key: "receivedDate", width: 13 },
     { header: "유통기한", key: "expirationDate", width: 13 },
-    { header: "LOT 최초 수량", key: "initialQuantity", width: 15 },
     { header: "현재 수량", key: "currentQuantity", width: 12 },
-    { header: "안전 수량", key: "minStock", width: 12 },
     { header: "상태", key: "status", width: 16 },
     { header: "활성 여부", key: "isActive", width: 12 },
     { header: "메모", key: "memo", width: 32 }
@@ -237,11 +233,7 @@ function addInventorySheet(workbook: ExcelJS.Workbook, rows: readonly InventoryE
       warehouse: row.warehouse,
       receivedDate: toDateOnly(row.receivedDate, `inventory[${index}].receivedDate`),
       expirationDate: toDateOnly(row.expirationDate, `inventory[${index}].expirationDate`),
-      initialQuantity: finiteNumber(row.initialQuantity, `inventory[${index}].initialQuantity`),
       currentQuantity: finiteNumber(row.currentQuantity, `inventory[${index}].currentQuantity`),
-      minStock: row.minStock === null || row.minStock === undefined
-        ? ""
-        : finiteNumber(row.minStock, `inventory[${index}].minStock`),
       status: row.status,
       isActive: row.isActive === false ? "비활성" : "활성",
       memo: row.memo ?? ""
@@ -250,7 +242,7 @@ function addInventorySheet(workbook: ExcelJS.Workbook, rows: readonly InventoryE
 
   worksheet.getColumn("receivedDate").numFmt = DATE_FORMAT;
   worksheet.getColumn("expirationDate").numFmt = DATE_FORMAT;
-  for (const key of ["initialQuantity", "currentQuantity", "minStock"]) {
+  for (const key of ["currentQuantity"]) {
     worksheet.getColumn(key).numFmt = "0";
   }
 }

@@ -62,9 +62,10 @@ export async function createOrder(formData: FormData) {
       actorId: user.id,
       ...(image ? { image } : {})
     });
+    console.log("여기냐1")
   } catch (error) {
     unstable_rethrow(error);
-
+    console.log("여기냐2",error)
     if (error instanceof Error && error.message === "FORBIDDEN") {
       await fail("주문 등록 권한이 없습니다.");
     }

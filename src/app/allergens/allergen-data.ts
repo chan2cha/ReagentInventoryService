@@ -9,7 +9,6 @@ export type AllergenRow = {
   code: string;
   name: string;
   category: string;
-  minStock: number | null;
   active: boolean;
   lotCount: number;
   source: "database" | "sample";
@@ -21,7 +20,6 @@ function sampleAllergenRows(): AllergenRow[] {
     code: allergen.code,
     name: allergen.name,
     category: allergen.category,
-    minStock: allergen.minStock,
     active: allergen.active,
     lotCount: 0,
     source: "sample"
@@ -64,7 +62,6 @@ export async function getAllergenRows(page:number, q = ""): Promise<PaginatedRes
       code: allergen.code,
       name: allergen.name,
       category: allergen.category ?? "-",
-      minStock: allergen.minStock,
       active: allergen.isActive,
       lotCount: allergen._count.lots,
       source: "database"

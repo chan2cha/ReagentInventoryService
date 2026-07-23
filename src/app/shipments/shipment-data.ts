@@ -21,6 +21,8 @@ export type ShipmentOrderRow = {
   allocationItems?: ShipmentAllocationItemRow[];
 };
 
+export type ShipmentOrderOrigin = "MANUAL" | "SHORTAGE_REORDER";
+
 export type ShipmentAllocationItemRow = {
   id: string;
   code: string;
@@ -65,7 +67,7 @@ function mapOrderStatus(status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANC
 }
 
 function mapOrderOrigin(origin: "MANUAL" | "SHORTAGE_REORDER"): OrderOriginLabel {
-  return origin === "SHORTAGE_REORDER" ? "부족분 재주문" : "직접 등록";
+  return origin === "SHORTAGE_REORDER" ? "출고예정" : "신규주문";
 }
 
 function mapShipmentFulfillmentStatus(
@@ -102,7 +104,7 @@ function sampleShipmentOrders(): ShipmentOrderRow[] {
         orderDate: order.orderDate,
         items: orderItemSummary(order),
         itemDetails: order.items.map((item) => ({ code: findAllergen(item.allergenId)?.code ?? "-", quantity: item.quantity })),
-        origin: "직접 등록",
+        origin: "신규주문",
         status: order.status,
         source: "sample"
       };
@@ -132,7 +134,13 @@ function sampleRecommendedLots(): RecommendedLotRow[] {
     });
 }
 
-export async function getShipmentPageData(orderPage:number,historyPage:number,orderQ = "",historyQ = ""): Promise<{
+export async function getShipmentPageData(
+  orderPage: number,
+  historyPage: number,
+  orderQ = "",
+  historyQ = "",
+  orderOrigin: ShipmentOrderOrigin = "SHORTAGE_REORDER"
+): Promise<{
   orders: ShipmentOrderRow[];
   recommendedLots: RecommendedLotRow[];
   shipmentHistory: ShipmentHistoryRow[];
@@ -144,6 +152,7 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
     const tomorrow = addDateOnlyDays(todayKey, 1);
     const orderWhere = {
       ...pendingShipmentOrderWhere(),
+      origin: orderOrigin,
       ...(orderQ ? { OR: [
         { orderNo: { contains: orderQ, mode: "insensitive" as const } },
         { client: { is: { name: { contains: orderQ, mode: "insensitive" as const } } } },
@@ -294,7 +303,7 @@ export async function getShipmentPageData(orderPage:number,historyPage:number,or
       }))
     };
   } catch (error) {
-    return handleDataSourceError("shipments", error, () => { const orderData=paginateRows(sampleShipmentOrders(),orderPage); const historyData=paginateRows<ShipmentHistoryRow>([],historyPage); return ({
+    return handleDataSourceError("shipments", error, () => { const orderData=paginateRows(sampleShipmentOrders().filter(() => orderOrigin === "MANUAL"),orderPage); const historyData=paginateRows<ShipmentHistoryRow>([],historyPage); return ({
       orders: orderData.rows, orderMeta:orderData,
       recommendedLots: sampleRecommendedLots(),
       shipmentHistory: historyData.rows, historyMeta:historyData

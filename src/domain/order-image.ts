@@ -37,16 +37,17 @@ export function isOrderImageContentType(value: string): value is OrderImageConte
 
 export function orderImageMetadataError(file: FileMetadata): string | null {
   const fileName = normalizedFileName(file.name);
-
+  
   if (!fileName || fileName.length > 255) {
     return "ORDER_IMAGE_NAME_INVALID";
   }
 
-  if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > ORDER_IMAGE_MAX_BYTES) {
+  if (!Number.isSafeInteger(file.size) || file.size > ORDER_IMAGE_MAX_BYTES) {
     return "ORDER_IMAGE_SIZE_INVALID";
   }
 
-  if (!isOrderImageContentType(file.type)) {
+  if (file.type&&!isOrderImageContentType(file.type)) {
+    
     return "ORDER_IMAGE_TYPE_INVALID";
   }
 
@@ -76,6 +77,8 @@ function hasValidSignature(contentType: OrderImageContentType, data: Uint8Array)
 export async function parseOrderImageUpload(
   value: FormDataEntryValue | null
 ): Promise<OrderImageUpload | null> {
+
+  console.log("parseOrderImageUpload", value);
   if (value === null || value === "") {
     return null;
   }
@@ -84,7 +87,7 @@ export async function parseOrderImageUpload(
     throw new Error("ORDER_IMAGE_FILE_INVALID");
   }
 
-  if (value.name === "" && value.size === 0) {
+  if (value.size === 0) {
     return null;
   }
 
@@ -115,8 +118,9 @@ export async function parseOrderImageUpload(
 export async function parseOrderImageUploads(
   values: FormDataEntryValue[]
 ): Promise<OrderImageUpload | null> {
+  console.log("parseOrderImageUploads", values);
   const populated = values.filter((value) => (
-    typeof value === "string" || value.name !== "" || value.size !== 0
+    typeof value === "string" || value.size !== 0
   ));
 
   if (populated.length > 1) {

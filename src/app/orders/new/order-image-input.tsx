@@ -56,7 +56,7 @@ export function OrderImageInput() {
         onChange={(event) => {
           const file = event.target.files?.[0] ?? null;
 
-          if (!file) {
+          if (!file || file.size === 0) {
             clearFile();
             return;
           }

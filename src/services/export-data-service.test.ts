@@ -25,14 +25,12 @@ function lotRecord(overrides: Record<string, unknown> = {}) {
       lotNo: "LOT-EGG-001",
       receivedDate: new Date("2026-01-10T00:00:00.000Z"),
       expirationDate: new Date("2026-08-20T00:00:00.000Z"),
-      initialQuantity: 10,
       memo: "냉장 보관",
       isActive: true,
       allergen: {
         code: "EGG-01",
         name: "난백",
-        category: "식품성",
-        minStock: 5
+        category: "식품성"
       }
     },
     ...overrides
@@ -131,48 +129,32 @@ describe("export data service", () => {
       receivedDate: new Date("2026-01-10T00:00:00.000Z"),
       expirationDate: new Date("2026-08-20T00:00:00.000Z"),
       warehouse: "FINISHED_GOODS",
-      initialQuantity: 10,
       currentQuantity: 2,
-      minStock: 5,
-      status: "재고부족",
+      status: "정상",
       isActive: true,
       memo: "냉장 보관"
     }]);
   });
 
-  it("exports only rows that exactly match a computed inventory status", async () => {
-    const findMany = vi.fn();
-    const queryRaw = vi.fn().mockResolvedValue([{
-      id: "lot-1",
-      warehouse: "FINISHED_GOODS",
-      lotNo: "LOT-EGG-001",
-      receivedDate: new Date("2026-01-10T00:00:00.000Z"),
-      expirationDate: new Date("2026-08-20T00:00:00.000Z"),
-      initialQuantity: 10,
-      currentQuantity: 2,
-      memo: "냉장 보관",
-      isActive: true,
-      allergenCode: "EGG-01",
-      allergenName: "난백",
-      allergenCategory: "food",
-      minStock: 5
-    }]);
+  it("exports rows that match an ordinary inventory status", async () => {
+    const findMany = vi.fn().mockResolvedValue([lotRecord()]);
+    const queryRaw = vi.fn();
     const db = dbMock({ $queryRaw: queryRaw, warehouseStock: { findMany } });
 
     const rows = await listLotExportRows(db, {
       q: "EGG",
-      status: "LOW_STOCK",
+      status: "NORMAL",
       warehouse: "FINISHED_GOODS",
       now: new Date("2026-07-13T03:00:00.000Z")
     });
 
-    expect(findMany).not.toHaveBeenCalled();
-    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(queryRaw).not.toHaveBeenCalled();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       lotNo: "LOT-EGG-001",
       warehouse: "FINISHED_GOODS",
-      status: "재고부족"
+      status: "정상"
     });
   });
 

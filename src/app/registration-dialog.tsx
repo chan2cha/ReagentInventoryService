@@ -8,6 +8,7 @@ export function RegistrationDialog({
   children,
   dialogClassName,
   showPlus = true,
+  triggerDisabled = false,
   triggerClassName = "primary-button dialog-trigger"
 }: {
   title: string;
@@ -15,6 +16,7 @@ export function RegistrationDialog({
   children: React.ReactNode;
   dialogClassName?: string;
   showPlus?: boolean;
+  triggerDisabled?: boolean;
   triggerClassName?: string;
 }) {
   return <DialogFrame
@@ -22,6 +24,7 @@ export function RegistrationDialog({
     eyebrow="ADMINISTRATION"
     showPlus={showPlus}
     title={title}
+    triggerDisabled={triggerDisabled}
     triggerClassName={triggerClassName}
     triggerLabel={triggerLabel}
   >

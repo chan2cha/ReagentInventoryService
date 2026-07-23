@@ -14,6 +14,7 @@ export function ShipmentAllocationDialog({ order }: { order: ShipmentOrderRow })
     className="shipment-allocation-dialog"
     eyebrow="SHIPMENT ALLOCATION"
     subtitle={<span>{order.orderNo} · {order.clientName}</span>}
+    showPlus={false}
     title="출고 LOT 배정"
     triggerClassName="table-action"
     triggerDisabled={order.source !== "database" || items.length === 0}

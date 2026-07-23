@@ -221,9 +221,7 @@ function inventoryWorkbookRows(rows: LotExportRow[], warehouses: readonly Wareho
     warehouse: warehouseLabel(row.warehouse, warehouses),
     receivedDate: row.receivedDate,
     expirationDate: row.expirationDate,
-    initialQuantity: row.initialQuantity,
     currentQuantity: row.currentQuantity,
-    minStock: row.minStock,
     status: row.status,
     isActive: row.isActive,
     memo: row.memo

@@ -5,7 +5,6 @@ import { buildWarehouseStockWhere } from "@/domain/export-filters";
 import {
   lotStatusFromSnapshot,
   lotStatusLabel,
-  lotStatusRequiresCrossModelComparison,
   type LotStatusKind,
   type LotStatusLabel
 } from "@/domain/lot-status";
@@ -13,11 +12,6 @@ import type { WarehouseKind } from "@/domain/warehouse";
 import { handleDataSourceError } from "@/lib/data-source";
 import { prisma } from "@/lib/prisma";
 import { PAGE_SIZE, pageMeta, paginateRows, type PaginatedResult } from "@/lib/pagination";
-import {
-  countStatusFilteredLots,
-  listStatusFilteredLots,
-  type StatusFilteredLotRecord
-} from "@/services/status-filtered-lot-query";
 import { findAllergen, formatDate, lots } from "../reagent-data";
 
 export type LotRow = {
@@ -30,8 +24,6 @@ export type LotRow = {
   receivedDate: string;
   expirationDate: string;
   currentQuantity: number;
-  initialQuantity: number;
-  minStock: number | null;
   status: LotStatusLabel;
   source: "database" | "sample";
 };
@@ -45,12 +37,10 @@ const warehouseStockRowSelect = {
       lotNo: true,
       receivedDate: true,
       expirationDate: true,
-      initialQuantity: true,
       allergen: {
         select: {
           name: true,
-          code: true,
-          minStock: true
+          code: true
         }
       }
     }
@@ -68,25 +58,6 @@ type DatabaseWarehouseStockRow = Prisma.WarehouseStockGetPayload<{
   select: typeof warehouseStockRowSelect;
 }>;
 
-function statusFilteredRecordToStock(record: StatusFilteredLotRecord): DatabaseWarehouseStockRow {
-  return {
-    reagentLotId: record.id,
-    warehouse: record.warehouse,
-    quantity: record.currentQuantity,
-    reagentLot: {
-      lotNo: record.lotNo,
-      receivedDate: record.receivedDate,
-      expirationDate: record.expirationDate,
-      initialQuantity: record.initialQuantity,
-      allergen: {
-        name: record.allergenName,
-        code: record.allergenCode,
-        minStock: record.minStock
-      }
-    }
-  };
-}
-
 function toDateInput(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -94,8 +65,7 @@ function toDateInput(date: Date) {
 function statusSnapshot(stock: DatabaseWarehouseStockRow) {
   return {
     currentQuantity: stock.quantity,
-    expirationDate: stock.reagentLot.expirationDate,
-    minStock: stock.reagentLot.allergen.minStock
+    expirationDate: stock.reagentLot.expirationDate
   };
 }
 
@@ -112,8 +82,6 @@ function toLotRow(stock: DatabaseWarehouseStockRow, now: Date): LotRow {
     receivedDate: toDateInput(lot.receivedDate),
     expirationDate: toDateInput(lot.expirationDate),
     currentQuantity: stock.quantity,
-    initialQuantity: lot.initialQuantity,
-    minStock: lot.allergen.minStock,
     status: lotStatusFromSnapshot(statusSnapshot(stock), now),
     source: "database"
   };
@@ -143,12 +111,9 @@ function sampleLotRows(
         receivedDate: lot.receivedDate,
         expirationDate: lot.expirationDate,
         currentQuantity: lot.quantity,
-        initialQuantity: lot.quantity,
-        minStock: allergen?.minStock ?? null,
         status: lotStatusFromSnapshot({
           currentQuantity: lot.quantity,
-          expirationDate: lot.expirationDate,
-          minStock: allergen?.minStock
+          expirationDate: lot.expirationDate
         }, now),
         source: "sample" as const
       };
@@ -164,38 +129,6 @@ function sampleLotRows(
     .sort((a, b) => a.expirationDate.localeCompare(b.expirationDate));
 }
 
-async function getStatusFilteredRows(
-  requestedPage: number,
-  q: string,
-  status: LotStatusKind,
-  warehouse: WarehouseKind | undefined,
-  now: Date
-): Promise<PaginatedResult<LotRow>> {
-  // LOW_STOCK/NORMAL은 관계 테이블의 최소재고 비교가 필요하므로 전용 SQL을 사용한다.
-  const normalizedRequestedPage = Math.max(1, requestedPage);
-  const requestedSkip = (normalizedRequestedPage - 1) * PAGE_SIZE;
-  const queryOptions = {
-    q,
-    status: status as Extract<LotStatusKind, "LOW_STOCK" | "NORMAL">,
-    now,
-    warehouse
-  };
-  const [total, initialRecords] = await Promise.all([
-    countStatusFilteredLots(prisma, queryOptions),
-    listStatusFilteredLots(prisma, { ...queryOptions, skip: requestedSkip, take: PAGE_SIZE })
-  ]);
-
-  const meta = pageMeta(normalizedRequestedPage, total);
-  const records = meta.skip === requestedSkip
-    ? initialRecords
-    : await listStatusFilteredLots(prisma, { ...queryOptions, skip: meta.skip, take: PAGE_SIZE });
-
-  return {
-    ...meta,
-    rows: records.map((record) => toLotRow(statusFilteredRecordToStock(record), now))
-  };
-}
-
 export async function getLotRows(
   page: number,
   q = "",
@@ -205,10 +138,6 @@ export async function getLotRows(
 ): Promise<PaginatedResult<LotRow>> {
   try {
     const where = buildWarehouseStockWhere({ q, status, warehouse }, now);
-
-    if (status && lotStatusRequiresCrossModelComparison(status)) {
-      return await getStatusFilteredRows(page, q, status, warehouse, now);
-    }
 
     const requestedSkip = (Math.max(1, page) - 1) * PAGE_SIZE;
     const stockQuery = {

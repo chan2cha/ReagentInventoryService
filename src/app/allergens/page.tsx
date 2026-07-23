@@ -1,12 +1,14 @@
 import { requireUser } from "@/lib/auth";
 import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
 import { SubmitButton } from "../submit-button";
-import { createAllergen, toggleAllergenActive, updateAllergen } from "./actions";
+import { toggleAllergenActive } from "./actions";
 import { allergenSourceLabel, getAllergenRows } from "./allergen-data";
 import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
 import { TableSearch } from "../table-search";
 import { FlashMessage } from "../flash-message";
 import { getFlashMessage } from "@/lib/flash-message";
+import { CreateAllergenDialog } from "./create-allergen-dialog";
+import { EditAllergenDialog } from "./edit-allergen-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -15,66 +17,44 @@ export default async function AllergensPage({ searchParams }: { searchParams?: P
   const canManage = user.role === "ADMIN";
 
   return (
-    <AppShell active="/allergens" title="시약 관리" description="검사 시약과 안전 수량 기준을 관리합니다.">
+    <AppShell active="/allergens" title="시약 관리" description="검사에 사용하는 시약 정보를 관리합니다.">
       <FlashMessage value={flash} />
 
-      <TableSearch pathname="/allergens" placeholder="시약 코드, 시약명, 분류 검색" value={params?.q} />
-      <div className={canManage ? "form-layout master-data-layout" : undefined}>
+      <div className="table-filter-toolbar extended-filter-toolbar allergen-toolbar">
+        <TableSearch pathname="/allergens" placeholder="시약 코드, 시약명, 분류 검색" value={params?.q} />
+        {canManage ? <CreateAllergenDialog /> : null}
+      </div>
+      <div className="allergen-page-body">
         <Panel title="시약 목록" note={allergenSourceLabel(allergenRows)}>
           <Table>
             <thead>
               <tr>
-                <th>코드</th><th>시약명</th><th>분류</th><th>안전 수량</th><th>입고 건수</th><th>상태</th>
+                <th>시약 코드</th><th>시약 정보</th><th>LOT 수</th><th>상태</th>
                 {canManage ? <th>관리</th> : null}
               </tr>
             </thead>
             <tbody>
               {allergenRows.map((allergen) => (
                 <tr key={allergen.id}>
-                  {canManage && allergen.source === "database" ? (
-                    <>
-                      <td colSpan={4}>
-                        <div className="table-edit-form allergen-edit-form">
-                          <input aria-label="시약 코드" defaultValue={allergen.code} form={`allergen-${allergen.id}`} maxLength={30} name="code" required />
-                          <input aria-label="시약명" defaultValue={allergen.name} form={`allergen-${allergen.id}`} name="name" required />
-                          <input aria-label="분류" defaultValue={allergen.category === "-" ? "" : allergen.category} form={`allergen-${allergen.id}`} name="category" />
-                          <input aria-label="안전 수량" defaultValue={allergen.minStock ?? 0} form={`allergen-${allergen.id}`} min={0} name="minStock" required type="number" />
-                        </div>
-                      </td>
-                    </>
-                  ) : (
-                    <><td>{allergen.code}</td><td>{allergen.name}</td><td>{allergen.category}</td><td>{allergen.minStock ?? "-"}</td></>
-                  )}
-                  <td>{allergen.lotCount}</td>
+                  <td><code className="allergen-code">{allergen.code}</code></td>
+                  <td><span className="stacked allergen-name"><strong>{allergen.name}</strong><small>{allergen.category === "-" ? "분류 없음" : allergen.category}</small></span></td>
+                  <td><span className="allergen-lot-count">{allergen.lotCount}<small>LOT</small></span></td>
                   <td><StatusBadge status={allergen.active ? "정상" : "취소"} /></td>
                   {canManage ? (
                     <td><div className="table-actions">
-                      {allergen.source === "database" ? <form action={updateAllergen} id={`allergen-${allergen.id}`}>
-                        <input name="allergenId" type="hidden" value={allergen.id} />
-                        <SubmitButton className="table-action" pendingLabel="저장 중...">저장</SubmitButton>
-                      </form> : null}
-                      <form action={toggleAllergenActive}>
+                      {allergen.source === "database" ? <><EditAllergenDialog allergen={allergen} /><form action={toggleAllergenActive}>
                         <input name="allergenId" type="hidden" value={allergen.id} />
                         <SubmitButton className={allergen.active ? "table-action danger" : "table-action"} confirmMessage={`${allergen.name} 시약을 ${allergen.active ? "비활성화" : "활성화"}하시겠습니까?`}>{allergen.active ? "비활성화" : "활성화"}</SubmitButton>
-                      </form>
+                      </form></> : <span className="table-muted">예시 데이터</span>}
                     </div></td>
                   ) : null}
                 </tr>
               ))}
+              {allergenRows.length === 0 ? <tr><td colSpan={canManage ? 5 : 4} className="table-empty">검색 조건에 맞는 시약이 없습니다.</td></tr> : null}
             </tbody>
           </Table>
         </Panel>
         <Pagination page={data.page} pathname="/allergens" preserve={{ q: params?.q }} total={data.total} totalPages={data.totalPages} />
-
-        {canManage ? <Panel title="시약 등록" note="관리자 전용">
-          <form action={createAllergen} className="entry-form compact-entry-form">
-            <label>시약 코드<input maxLength={30} name="code" placeholder="예: HDM-D1" required /></label>
-            <label>시약명<input name="name" placeholder="시약명" required /></label>
-            <label>분류<input name="category" placeholder="예: 흡입성" /></label>
-            <label>안전 수량<input defaultValue={0} min={0} name="minStock" required type="number" /></label>
-            <div className="form-actions"><SubmitButton className="primary-button" pendingLabel="등록 중...">시약 등록</SubmitButton></div>
-          </form>
-        </Panel> : null}
       </div>
     </AppShell>
   );

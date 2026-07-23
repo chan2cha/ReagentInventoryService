@@ -20,10 +20,12 @@
     "prisma:rotate-legacy-admin": "node prisma/seed.js --rotate-legacy-admin"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3",
+    "@prisma/adapter-pg": "^7.9.0",
+    "@prisma/client": "^7.9.0",
     "exceljs": "4.4.0",
     "lucide-react": "^1.24.0",
     "next": "latest",
+    "pg": "^8.22.0",
     "react": "latest",
     "react-dom": "latest",
     "server-only": "^0.0.1",
@@ -31,16 +33,20 @@
   },
   "devDependencies": {
     "@types/node": "latest",
+    "@types/pg": "^8.20.0",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "eslint": "latest",
     "eslint-config-next": "latest",
-    "prisma": "^6.19.3",
+    "prisma": "^7.9.0",
     "typescript": "latest",
     "vitest": "latest"
   },
   "overrides": {
     "exceljs": {
+      "archiver": "8.0.0",
+      "fast-csv": "5.0.7",
+      "unzipper": "0.12.5",
       "uuid": "11.1.1"
     }
   }

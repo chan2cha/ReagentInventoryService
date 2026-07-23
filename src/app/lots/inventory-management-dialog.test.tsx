@@ -32,7 +32,6 @@ function renderDialog(currentQuantity = 5) {
       expirationDate="2027.07.31"
       lotId="lot-1"
       lotNo="LOT-EGG-001"
-      minStock={2}
       warehouse="FINISHED_GOODS"
     />
   );

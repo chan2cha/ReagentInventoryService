@@ -54,16 +54,16 @@ const prisma = new PrismaClient({
 });
 
 const allergenSeeds = [
-  { code: "HDM-D1", name: "집먼지 진드기 D.pteronyssinus", category: "흡입성", minStock: 10 },
-  { code: "HDM-D2", name: "집먼지 진드기 D.farinae", category: "흡입성", minStock: 10 },
-  { code: "DOG-01", name: "개 비듬", category: "흡입성", minStock: 8 },
-  { code: "CAT-01", name: "고양이 비듬", category: "흡입성", minStock: 8 },
-  { code: "GRS-01", name: "잔디 꽃가루 혼합", category: "흡입성", minStock: 6 },
-  { code: "MLK-01", name: "우유", category: "식품성", minStock: 12 },
-  { code: "EGG-01", name: "난백", category: "식품성", minStock: 12 },
-  { code: "PNT-01", name: "땅콩", category: "식품성", minStock: 10 },
-  { code: "SHR-01", name: "새우", category: "식품성", minStock: 8 },
-  { code: "WHT-01", name: "밀가루", category: "식품성", minStock: 10 }
+  { code: "HDM-D1", name: "집먼지 진드기 D.pteronyssinus", category: "흡입성" },
+  { code: "HDM-D2", name: "집먼지 진드기 D.farinae", category: "흡입성" },
+  { code: "DOG-01", name: "개 비듬", category: "흡입성" },
+  { code: "CAT-01", name: "고양이 비듬", category: "흡입성" },
+  { code: "GRS-01", name: "잔디 꽃가루 혼합", category: "흡입성" },
+  { code: "MLK-01", name: "우유", category: "식품성" },
+  { code: "EGG-01", name: "난백", category: "식품성" },
+  { code: "PNT-01", name: "땅콩", category: "식품성" },
+  { code: "SHR-01", name: "새우", category: "식품성" },
+  { code: "WHT-01", name: "밀가루", category: "식품성" }
 ];
 
 const lotSeeds = [
@@ -346,14 +346,12 @@ async function main() {
       update: {
         name: seed.name,
         category: seed.category,
-        minStock: seed.minStock,
         isActive: true
       },
       create: {
         code: seed.code,
         name: seed.name,
         category: seed.category,
-        minStock: seed.minStock,
         isActive: true
       }
     });
