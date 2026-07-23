@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
+  serverExternalPackages: ["exceljs"],
   experimental: {
     serverActions: {
       bodySizeLimit: "4mb"

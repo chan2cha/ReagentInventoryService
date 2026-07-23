@@ -1,3 +1,4 @@
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { cancelPendingOrder } from "../services/order-service";
@@ -38,8 +39,14 @@ if (operationalUrls.some((url) => target(testUrl) === target(url))) {
   throw new Error("TEST_DATABASE_MUST_BE_ISOLATED");
 }
 
-const prisma = new PrismaClient({ datasources: { db: { url: testUrl } } });
-const concurrentPrisma = new PrismaClient({ datasources: { db: { url: testUrl } } });
+function createTestPrismaClient() {
+  return new PrismaClient({
+    adapter: new PrismaPg({ connectionString: testUrl })
+  });
+}
+
+const prisma = createTestPrismaClient();
+const concurrentPrisma = createTestPrismaClient();
 const runId = `integration-${Date.now()}`;
 const shipmentNow = new Date("2030-01-15T03:00:00.000Z");
 let userId: string;
