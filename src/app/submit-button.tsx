@@ -2,6 +2,7 @@
 
 import { LoaderCircle } from "lucide-react";
 import { useFormStatus } from "react-dom";
+import { useConfirmationDialog } from "./confirmation-dialog";
 
 type SubmitButtonProps = {
   children: React.ReactNode;
@@ -21,6 +22,7 @@ export function SubmitButton({
   pendingLabel = "처리 중..."
 }: SubmitButtonProps) {
   const { pending } = useFormStatus();
+  const { confirm } = useConfirmationDialog();
 
   return (
     <button
@@ -28,11 +30,19 @@ export function SubmitButton({
       className={["submit-button", className].filter(Boolean).join(" ")}
       disabled={disabled || pending}
       form={form}
-      onClick={(event) => {
-        const targetForm = event.currentTarget.form;
-        if (confirmMessage && (!targetForm || targetForm.checkValidity()) && !window.confirm(confirmMessage)) {
-          event.preventDefault();
-        }
+      onClick={async (event) => {
+        if (!confirmMessage) return;
+
+        const submitter = event.currentTarget;
+        const targetForm = submitter.form;
+        if (targetForm && !targetForm.checkValidity()) return;
+
+        event.preventDefault();
+        const confirmed = await confirm({
+          message: confirmMessage,
+          tone: className?.includes("danger") ? "danger" : "default"
+        });
+        if (confirmed) targetForm?.requestSubmit(submitter);
       }}
       type="submit"
     >

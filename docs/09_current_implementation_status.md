@@ -98,7 +98,7 @@ Authenticated screens use the official company logo in a white sidebar, Shinyoun
 |---|---|---|
 | `/login` | Implemented | Self-managed login using the `User` table. |
 | `/` | Implemented | DB-backed operational dashboard. |
-| `/lots` | Implemented | DB-backed stock list by reagent/manufacture number/expiration. |
+| `/lots` | Implemented | DB-backed stock list by reagent/manufacture number/expiration, with status/warehouse filters and expiration, receiving-date, quantity, or manufacture-number sorting. |
 | `/receiving` | Implemented | Creates inbound stock and inbound movement history. |
 | `/orders` | Implemented | Lists orders and protected attachment links, supports order cancellation. |
 | `/orders/new` | Implemented | Creates multi-item orders with searchable client/reagent selection and one optional validated image. |
@@ -191,13 +191,15 @@ Behavior:
 
 - Loads orders in `RECEIVED` or `READY_TO_SHIP`.
 - Excludes expired and future-received LOTs using the current Korean calendar date; a LOT remains valid through its expiration date.
-- Allocates eligible finished-goods stock from earliest expiration first; sample, returned, nonconforming, and disposal balances are never shippable.
-- Fails the whole transaction if stock is insufficient.
-- Claims the order state and conditionally decrements each `(reagentLotId, FINISHED_GOODS)` balance so concurrent requests cannot create duplicate active shipments or negative stock.
+- Loads eligible stock from active warehouses, distinguishes the same LOT by warehouse, and allows the operator to select the manufacture number and source warehouse.
+- Allocates eligible stock from earliest expiration first across active warehouses and persists the selected source warehouse on each `ShipmentItem`.
+- Partially ships available stock when inventory is insufficient and creates a linked shortage reorder for the remaining quantity.
+- Claims the order state and conditionally decrements each selected `(reagentLotId, warehouse)` balance so concurrent requests cannot create duplicate active shipments or negative stock.
 - Runs at `Serializable` isolation and retries Prisma `P2034` or compare-and-set conflicts up to a fixed limit.
 - Creates `Shipment`.
+- Stores a shipment memo of up to 500 characters and includes it in the shipment audit description; it is optional for normal fulfillment and required for partial fulfillment.
 - Creates `ShipmentItem`.
-- Decrements `WarehouseStock.quantity` for `FINISHED_GOODS`.
+- Decrements `WarehouseStock.quantity` for the selected `(reagentLotId, warehouse)` balance.
 - Creates `StockMovement` with type `OUT`.
 - Updates `Order.status` to `SHIPPED`.
 
@@ -214,9 +216,11 @@ Behavior:
 - Shows recent shipment history.
 - Allows cancellation of active shipments.
 - Conditionally claims `SHIPPED` to `CANCELLED`, so concurrent cancellation requests cannot restore stock twice.
-- Restores the `FINISHED_GOODS` `WarehouseStock.quantity` from `ShipmentItem`.
+- Restores the exact source warehouse's `WarehouseStock.quantity` from `ShipmentItem`.
 - Creates `StockMovement` with type `REVERSE`.
 - Restores `Order.status` to `READY_TO_SHIP`.
+- Cancels a linked shortage reorder while it is still received or ready to ship.
+- Blocks cancellation of the original shipment after its linked shortage reorder has already shipped; the shortage shipment must be cancelled first.
 
 ### Stock Movement History
 
@@ -243,7 +247,7 @@ Files:
 
 Behavior:
 
-- Uses fixed warehouses `FINISHED_GOODS`, `SAMPLE`, `RETURNED`, `NONCONFORMING`, and `DISPOSAL`, displayed as 완제품, 검체, 반품, 부적합, and 폐기.
+- Uses active records from the warehouse master; legacy defaults remain `FINISHED_GOODS`, `SAMPLE`, `RETURNED`, `NONCONFORMING`, and `DISPOSAL`.
 - Uses `WarehouseStock` keyed by `(reagentLotId, warehouse)` as the only mutable inventory quantity.
 - Lists one inventory row per LOT and warehouse and supports warehouse filtering and export.
 - Opens one `재고 관리` dialog per row and switches between stock adjustment and warehouse transfer without duplicating table actions.
@@ -432,6 +436,7 @@ Migrations:
 - `prisma/migrations/20260721150000_remove_order_templates/migration.sql`
 - `prisma/migrations/20260721160000_add_transfer_movement_type/migration.sql`
 - `prisma/migrations/20260721161000_add_warehouse_inventory/migration.sql`
+- `prisma/migrations/20260729140000_add_shipment_item_warehouse/migration.sql`
 - Operations guide: `docs/11_database_migrations.md`
 - The existing Supabase schema was registered with `20260710000000_baseline`. On 2026-07-12 the operational database passed the P0 preflight and applied both forward migrations through `20260712150000_add_order_templates`; that applied migration remains in source history and must not be deleted or rewritten. On 2026-07-13 it also applied the session-version and proactive-replacement migrations.
 - The P0 invariant migration adds quantity/date CHECK constraints, duplicate-order-item protection, one active shipment per order, and foreign-key traversal indexes. Run its documented preflight before deployment.

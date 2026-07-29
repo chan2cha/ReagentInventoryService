@@ -5,7 +5,8 @@ import {
   type StockMovementKind
 } from "./stock-movement-presentation";
 import {
-  isLotStatusKind,
+  isLotStatusFilter,
+  type LotStatusFilter,
   type LotStatusKind
 } from "./lot-status";
 import type { WarehouseKind } from "./warehouse";
@@ -79,14 +80,14 @@ function normalizedMovementType(value?: string): StockMovementKind | undefined {
   return normalized;
 }
 
-export function normalizedLotStatus(value?: string): LotStatusKind | undefined {
+export function normalizedLotStatus(value?: string): LotStatusFilter | undefined {
   const normalized = value?.trim() ?? "";
 
   if (!normalized) {
     return undefined;
   }
 
-  if (!isLotStatusKind(normalized)) {
+  if (!isLotStatusFilter(normalized)) {
     throw new Error("EXPORT_FILTER_STATUS_INVALID");
   }
 
@@ -131,14 +132,14 @@ function lotStatusCandidateWhere(
   const afterExpiring = addDateOnlyDays(koreaDateKey(now), 31);
 
   if (status === "EXPIRED") {
-    return { reagentLot: { is: { expirationDate: { lt: today } } } };
+    return {
+      quantity: { not: 0 },
+      reagentLot: { is: { expirationDate: { lt: today } } }
+    };
   }
 
   if (status === "OUT_OF_STOCK") {
-    return {
-      quantity: 0,
-      reagentLot: { is: { expirationDate: { gte: today } } }
-    };
+    return { quantity: 0 };
   }
 
   if (status === "EXPIRING") {
@@ -163,6 +164,10 @@ export function buildWarehouseStockWhere(
   const warehouse = normalizedWarehouse(filters.warehouse);
   const conditions: Prisma.WarehouseStockWhereInput[] = [];
 
+  if (!status) {
+    conditions.push({ quantity: { gt: 0 } });
+  }
+
   if (q) {
     conditions.push({
       reagentLot: { is: { OR: [
@@ -173,7 +178,7 @@ export function buildWarehouseStockWhere(
     });
   }
 
-  if (status) {
+  if (status && status !== "ALL") {
     conditions.push(lotStatusCandidateWhere(status, now));
   }
 

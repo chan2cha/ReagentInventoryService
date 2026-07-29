@@ -116,7 +116,13 @@ export default async function OrdersPage({
                   </span>
                 </td>
                 <td>{formatDate(order.orderDate)}</td>
-                <td><ItemQuantitySummary items={order.itemDetails} /></td>
+                <td>
+                  <ItemQuantitySummary
+                    dialogSubtitle={order.orderNo}
+                    items={order.itemDetails}
+                    summarizeAt={3}
+                  />
+                </td>
                 <td>{order.memo}</td>
                 <td>
                   {order.image ? (

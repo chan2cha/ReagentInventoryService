@@ -154,6 +154,7 @@ export async function completeReplacement(db: PrismaClient, input: {
         shipmentId: shipment.id,
         reagentLotId: allocation.id,
         allergenId: replacement.originalShipmentItem.allergenId,
+        warehouse: "FINISHED_GOODS",
         quantity: allocation.quantity
       }))
     });

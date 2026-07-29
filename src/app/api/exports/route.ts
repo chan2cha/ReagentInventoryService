@@ -27,9 +27,9 @@ import {
   stockMovementTypeLabel
 } from "@/domain/stock-movement-presentation";
 import {
-  isLotStatusKind,
+  isLotStatusFilter,
   lotStatusLabel,
-  type LotStatusKind
+  type LotStatusFilter
 } from "@/domain/lot-status";
 import {
   isWarehouseKind,
@@ -320,11 +320,11 @@ function inventoryFilterValues(
   const statusValue = queryValue(searchParams, statusName);
   const warehouse = warehouseFilterValue(searchParams, warehouseName);
 
-  if (statusValue && !isLotStatusKind(statusValue)) {
+  if (statusValue && !isLotStatusFilter(statusValue)) {
     throw new Error("EXPORT_FILTER_STATUS_INVALID");
   }
 
-  return { q, status: statusValue as LotStatusKind | "", warehouse };
+  return { q, status: statusValue as LotStatusFilter | "", warehouse };
 }
 
 function addInventoryFilters(
@@ -335,7 +335,10 @@ function addInventoryFilters(
 ) {
   if (values.q) filters.push({ label: `${prefix}검색어`, value: values.q });
   if (values.status) {
-    filters.push({ label: `${prefix}상태`, value: lotStatusLabel(values.status) });
+    filters.push({
+      label: `${prefix}상태`,
+      value: values.status === "ALL" ? "전체 상태" : lotStatusLabel(values.status)
+    });
   }
   if (values.warehouse) {
     filters.push({ label: `${prefix}창고`, value: warehouseLabel(values.warehouse, warehouses) });

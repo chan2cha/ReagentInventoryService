@@ -33,7 +33,7 @@ export default async function ShipmentsPage({
     return `/shipments?${query}` as never;
   };
   const [user, data, flash] = await Promise.all([requireUser(), getShipmentPageData(parsePage(params?.ordersPage),parsePage(params?.historyPage),params?.ordersQ?.trim(),params?.historyQ?.trim(),ordersOrigin), getFlashMessage()]);
-  const { orders, recommendedLots, shipmentHistory } = data;
+  const { orders, shipmentHistory } = data;
   const canWrite = can(user.role, "SHIPMENT_WRITE");
 
   return (
@@ -46,8 +46,8 @@ export default async function ShipmentsPage({
 
       <Panel title="출고·복구 안내" note="처리 전 확인 사항">
         <OperationGuide items={[
-          { title: "재고 배정 기준", description: "출고 시 유통기한이 빠른 재고부터 자동으로 차감합니다.", icon: guideIcons.Clock3 },
-          { title: "출고 취소 결과", description: "취소하면 출고 수량만큼 재고가 복구되고 주문은 준비중으로 돌아갑니다.", icon: guideIcons.PackageCheck, tone: "success" },
+          { title: "재고 배정 기준", description: "활성 창고의 제조번호별 재고를 표시하고 유통기한이 빠른 순서로 기본 배정합니다.", icon: guideIcons.Clock3 },
+          { title: "출고 취소 결과", description: "재고와 주문을 복구합니다. 단, 부족분 재주문이 출고된 경우에는 해당 출고를 먼저 취소해야 합니다.", icon: guideIcons.PackageCheck, tone: "success" },
           { title: "이력 기록", description: "복구 내역은 입출고 이력에 되돌림 기록으로 남습니다.", icon: guideIcons.ShieldCheck }
         ]} />
       </Panel>
@@ -109,6 +109,7 @@ export default async function ShipmentsPage({
                 <th>거래처</th>
                 <th>출고일</th>
                 <th>품목</th>
+                <th>출고 메모</th>
                 <th>상태</th>
                 {canWrite ? <th>처리</th> : null}
               </tr>
@@ -120,6 +121,7 @@ export default async function ShipmentsPage({
                   <td>{shipment.clientName}</td>
                   <td>{formatDate(shipment.shippedAt)}</td>
                   <td><ItemQuantitySummary items={shipment.itemDetails} /></td>
+                  <td>{shipment.memo}</td>
                   <td><StatusBadge status={shipment.status} /></td>
                   {canWrite ? <td>{shipment.canCancel && shipment.source === "database" ? (
                     <form action={cancelShipment} className="inline-cancel-form">
@@ -129,12 +131,14 @@ export default async function ShipmentsPage({
                         출고 취소
                       </SubmitButton>
                     </form>
+                  ) : shipment.cancellationBlockedReason ? (
+                    <small className="shipment-cancellation-blocked">{shipment.cancellationBlockedReason}</small>
                   ) : null}</td> : null}
                 </tr>
               ))}
               {shipmentHistory.length === 0 ? (
                 <tr>
-                  <td colSpan={canWrite ? 6 : 5}>최근 출고 내역이 없습니다.</td>
+                  <td colSpan={canWrite ? 7 : 6}>최근 출고 내역이 없습니다.</td>
                 </tr>
               ) : null}
             </tbody>

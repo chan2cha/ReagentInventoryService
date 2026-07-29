@@ -45,6 +45,7 @@ describe("getLotRows status filtering", () => {
       "",
       "EXPIRING",
       "RETURNED",
+      "EXPIRATION_ASC",
       new Date("2026-07-13T03:00:00.000Z")
     );
 
@@ -59,5 +60,45 @@ describe("getLotRows status filtering", () => {
       warehouse: "RETURNED",
       currentQuantity: 3
     })]);
+  });
+
+  it("shows only positive stock by default and allows all stock explicitly", async () => {
+    mocks.count.mockResolvedValue(0);
+    mocks.findMany.mockResolvedValue([]);
+
+    await getLotRows(1);
+    expect(mocks.count).toHaveBeenLastCalledWith({
+      where: { quantity: { gt: 0 } }
+    });
+
+    await getLotRows(1, "", "ALL");
+    expect(mocks.count).toHaveBeenLastCalledWith({ where: {} });
+  });
+
+  it("applies the selected inventory sort with stable tie breakers", async () => {
+    mocks.count.mockResolvedValue(0);
+    mocks.findMany.mockResolvedValue([]);
+
+    await getLotRows(1, "", undefined, undefined, "RECEIVED_DESC");
+    expect(mocks.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      orderBy: [
+        { reagentLot: { receivedDate: "desc" } },
+        { reagentLot: { expirationDate: "asc" } },
+        { reagentLot: { lotNo: "asc" } },
+        { warehouse: "asc" },
+        { reagentLotId: "asc" }
+      ]
+    }));
+
+    await getLotRows(1, "", undefined, undefined, "QUANTITY_ASC");
+    expect(mocks.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      orderBy: [
+        { quantity: "asc" },
+        { reagentLot: { expirationDate: "asc" } },
+        { reagentLot: { lotNo: "asc" } },
+        { warehouse: "asc" },
+        { reagentLotId: "asc" }
+      ]
+    }));
   });
 });

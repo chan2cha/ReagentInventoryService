@@ -12,6 +12,7 @@ type RequestedItem = {
 type Allocation = {
   allergenId: string;
   lotId: string;
+  warehouse: string;
   quantity: number;
 };
 
@@ -19,8 +20,13 @@ type Shortage = RequestedItem;
 
 export type ShipmentAllocationInput = {
   lotId: string;
+  warehouse: string;
   quantity: number;
 };
+
+function allocationKey(lotId: string, warehouse: string) {
+  return `${lotId}\u0000${warehouse}`;
+}
 
 function assertShippableOrder(order: {
   status: "RECEIVED" | "READY_TO_SHIP" | "SHIPPED" | "CANCELLED";
@@ -40,8 +46,15 @@ export async function processShipment(
   orderId: string,
   actorId: string,
   now?: Date,
-  selectedAllocations?: ShipmentAllocationInput[]
+  selectedAllocations?: ShipmentAllocationInput[],
+  shipmentMemo?: string
 ) {
+  const normalizedShipmentMemo = shipmentMemo?.trim();
+
+  if (normalizedShipmentMemo && normalizedShipmentMemo.length > 500) {
+    throw new Error("SHIPMENT_MEMO_TOO_LONG");
+  }
+
   return runSerializableTransaction(db, async (tx) => {
     // Keep an injected date stable in tests, but refresh the production clock for
     // every serializable retry so a retry crossing Korean midnight cannot use an
@@ -121,20 +134,42 @@ export async function processShipment(
 
     const allocations: Allocation[] = [];
     const shortages: Shortage[] = [];
+    const activeWarehouses = await tx.warehouse.findMany({
+      where: { isActive: true },
+      select: { code: true }
+    });
+    const activeWarehouseCodes = activeWarehouses.map((warehouse) => warehouse.code);
+    const activeWarehouseSet = new Set(activeWarehouseCodes);
 
     if (selectedAllocations) {
-      const normalized = new Map<string, number>();
+      const normalized = new Map<string, ShipmentAllocationInput>();
       for (const allocation of selectedAllocations) {
-        if (!allocation.lotId || !Number.isInteger(allocation.quantity) || allocation.quantity <= 0) {
+        if (
+          !allocation.lotId ||
+          !allocation.warehouse ||
+          !activeWarehouseSet.has(allocation.warehouse) ||
+          !Number.isInteger(allocation.quantity) ||
+          allocation.quantity <= 0
+        ) {
           throw new Error("INVALID_ALLOCATION");
         }
-        normalized.set(allocation.lotId, (normalized.get(allocation.lotId) ?? 0) + allocation.quantity);
+        const key = allocationKey(allocation.lotId, allocation.warehouse);
+        const current = normalized.get(key);
+        normalized.set(key, {
+          lotId: allocation.lotId,
+          warehouse: allocation.warehouse,
+          quantity: (current?.quantity ?? 0) + allocation.quantity
+        });
       }
 
       const selectedStocks = await tx.warehouseStock.findMany({
         where: {
-          reagentLotId: { in: [...normalized.keys()] },
-          warehouse: "FINISHED_GOODS",
+          reagentLotId: {
+            in: [...new Set(
+              [...normalized.values()].map((allocation) => allocation.lotId)
+            )]
+          },
+          warehouse: { in: activeWarehouseCodes },
           reagentLot: {
             is: {
               expirationDate: { gte: today },
@@ -145,22 +180,31 @@ export async function processShipment(
         },
         select: {
           reagentLotId: true,
+          warehouse: true,
           reagentLot: { select: { allergenId: true } }
         }
       });
-      const lotById = new Map(selectedStocks.map((stock) => [
-        stock.reagentLotId,
+      const stockByKey = new Map(selectedStocks.map((stock) => [
+        allocationKey(stock.reagentLotId, stock.warehouse),
         stock.reagentLot
       ]));
       const allocatedByAllergen = new Map<string, number>();
 
-      for (const [lotId, quantity] of normalized) {
-        const lot = lotById.get(lotId);
+      for (const [key, selected] of normalized) {
+        const lot = stockByKey.get(key);
         if (!lot || !requestedByAllergen.has(lot.allergenId)) {
           throw new Error("INVALID_ALLOCATION");
         }
-        allocatedByAllergen.set(lot.allergenId, (allocatedByAllergen.get(lot.allergenId) ?? 0) + quantity);
-        allocations.push({ allergenId: lot.allergenId, lotId, quantity });
+        allocatedByAllergen.set(
+          lot.allergenId,
+          (allocatedByAllergen.get(lot.allergenId) ?? 0) + selected.quantity
+        );
+        allocations.push({
+          allergenId: lot.allergenId,
+          lotId: selected.lotId,
+          warehouse: selected.warehouse,
+          quantity: selected.quantity
+        });
       }
 
       for (const item of requestedByAllergen.values()) {
@@ -179,9 +223,13 @@ export async function processShipment(
     } else {
       for (const item of requestedByAllergen.values()) {
         let remaining = item.quantity;
+        if (activeWarehouseCodes.length === 0) {
+          shortages.push({ ...item, quantity: remaining });
+          continue;
+        }
         const candidateStocks = await tx.warehouseStock.findMany({
           where: {
-            warehouse: "FINISHED_GOODS",
+            warehouse: { in: activeWarehouseCodes },
             quantity: { gt: 0 },
             reagentLot: {
               is: {
@@ -195,7 +243,8 @@ export async function processShipment(
           include: { reagentLot: true },
           orderBy: [
             { reagentLot: { expirationDate: "asc" } },
-            { reagentLot: { lotNo: "asc" } }
+            { reagentLot: { lotNo: "asc" } },
+            { warehouse: "asc" }
           ]
         });
 
@@ -206,6 +255,7 @@ export async function processShipment(
           allocations.push({
             allergenId: item.allergenId,
             lotId: stock.reagentLotId,
+            warehouse: stock.warehouse,
             quantity
           });
         }
@@ -223,11 +273,15 @@ export async function processShipment(
       throw new Error("NO_ALLOCATIONS");
     }
 
+    if (shortages.length > 0 && !normalizedShipmentMemo) {
+      throw new Error("PARTIAL_SHIPMENT_MEMO_REQUIRED");
+    }
+
     for (const allocation of allocations) {
       const deduction = await tx.warehouseStock.updateMany({
         where: {
           reagentLotId: allocation.lotId,
-          warehouse: "FINISHED_GOODS",
+          warehouse: allocation.warehouse,
           quantity: {
             gte: allocation.quantity
           },
@@ -251,13 +305,19 @@ export async function processShipment(
       }
     }
 
+    const allocationDescription = selectedAllocations
+      ? "수동 LOT 배정 출고"
+      : "유통기한 빠른 순 자동 출고";
+    const savedShipmentMemo = normalizedShipmentMemo
+      ? `${allocationDescription} / 메모: ${normalizedShipmentMemo}`
+      : allocationDescription;
     const shipment = await tx.shipment.create({
       data: {
         orderId: order.id,
         status: "SHIPPED",
         fulfillmentStatus: shortages.length > 0 ? "PARTIAL" : "NORMAL",
         shippedBy: actorId,
-        memo: selectedAllocations ? "관리자 LOT 배정 출고" : "유통기한 빠른 순 자동 출고"
+        memo: savedShipmentMemo
       }
     });
 
@@ -266,6 +326,7 @@ export async function processShipment(
         shipmentId: shipment.id,
         reagentLotId: allocation.lotId,
         allergenId: allocation.allergenId,
+        warehouse: allocation.warehouse,
         quantity: allocation.quantity
       }))
     });
@@ -275,7 +336,7 @@ export async function processShipment(
         reagentLotId: allocation.lotId,
         type: "OUT" as const,
         quantity: allocation.quantity,
-        warehouse: "FINISHED_GOODS" as const,
+        warehouse: allocation.warehouse,
         reason: order.orderNo,
         refType: "SHIPMENT",
         refId: shipment.id,
@@ -330,7 +391,7 @@ export async function processShipment(
         action: "SHIPMENT_CREATE",
         entityType: "SHIPMENT",
         entityId: shipment.id,
-        description: `${order.orderNo} 출고 처리`,
+        description: `${order.orderNo} 출고 처리 · ${savedShipmentMemo}`,
         actorId
       }
     });
@@ -377,6 +438,10 @@ export async function reverseShipment(
       throw new Error("SHIPMENT_ALREADY_CANCELLED");
     }
 
+    if (shipment.shortageReorder?.status === "SHIPPED") {
+      throw new Error("SHORTAGE_REORDER_ALREADY_SHIPPED");
+    }
+
     const memo = shipment.memo
       ? `${shipment.memo} / 출고 취소: ${reason}`
       : `출고 취소: ${reason}`;
@@ -401,7 +466,7 @@ export async function reverseShipment(
         where: {
           reagentLotId_warehouse: {
             reagentLotId: item.reagentLotId,
-            warehouse: "FINISHED_GOODS"
+            warehouse: item.warehouse
           }
         },
         data: {
@@ -418,7 +483,7 @@ export async function reverseShipment(
         reagentLotId: item.reagentLotId,
         type: "REVERSE" as const,
         quantity: item.quantity,
-        warehouse: "FINISHED_GOODS" as const,
+        warehouse: item.warehouse,
         reason: `${shipment.order.orderNo} 출고 취소: ${reason}`,
         refType: "SHIPMENT_CANCEL",
         refId: shipment.id,

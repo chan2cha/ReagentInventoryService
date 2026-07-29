@@ -1,15 +1,24 @@
 import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
-import { formatDate, getLotRows, lotSourceLabel } from "./lot-data";
+import {
+  DEFAULT_LOT_SORT,
+  formatDate,
+  getLotRows,
+  isLotSortKind,
+  LOT_SORT_KINDS,
+  lotSortLabel,
+  lotSourceLabel
+} from "./lot-data";
 import { InventoryManagementDialog } from "./inventory-management-dialog";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/access";
 import { parsePage } from "@/lib/pagination";
 import { Pagination } from "../pagination";
 import { ExportDownloadButton } from "../exports/export-download-button";
-import { isLotStatusKind, lotStatusLabel } from "@/domain/lot-status";
+import { isLotStatusFilter, lotStatusLabel } from "@/domain/lot-status";
 import { warehouseLabel } from "@/domain/warehouse";
 import { getWarehouseOptions } from "@/lib/warehouse-data";
 import { LotTableFilters } from "./lot-table-filters";
+import { LotSortControl } from "./lot-sort-control";
 import { FlashMessage } from "../flash-message";
 import { getFlashMessage } from "@/lib/flash-message";
 
@@ -18,17 +27,31 @@ export const dynamic = "force-dynamic";
 export default async function LotsPage({
   searchParams
 }: {
-  searchParams?: Promise<{ page?: string; q?: string; status?: string; warehouse?: string }>;
+  searchParams?: Promise<{
+    page?: string;
+    q?: string;
+    status?: string;
+    warehouse?: string;
+    sort?: string;
+  }>;
 }) {
   const params = await searchParams;
   const [user, flash, warehouses, warehouseLabels] = await Promise.all([
     requireUser(), getFlashMessage(), getWarehouseOptions(), getWarehouseOptions(false)
   ]);
   const statusParam = params?.status?.trim() ?? "";
-  const lotStatus = isLotStatusKind(statusParam) ? statusParam : undefined;
+  const lotStatus = isLotStatusFilter(statusParam) ? statusParam : undefined;
   const warehouseParam = params?.warehouse?.trim() ?? "";
   const warehouse = warehouses.some((item) => item.code === warehouseParam) ? warehouseParam : undefined;
-  const data = await getLotRows(parsePage(params?.page), params?.q?.trim(), lotStatus, warehouse);
+  const sortParam = params?.sort?.trim() ?? "";
+  const lotSort = isLotSortKind(sortParam) ? sortParam : DEFAULT_LOT_SORT;
+  const data = await getLotRows(
+    parsePage(params?.page),
+    params?.q?.trim(),
+    lotStatus,
+    warehouse,
+    lotSort
+  );
   const lotRows = data.rows;
   const canWrite = can(user.role, "STOCK_WRITE");
   const canExport = can(user.role, "DATA_EXPORT");
@@ -43,7 +66,13 @@ export default async function LotsPage({
     >
       <FlashMessage value={flash} />
       <div className="table-filter-toolbar extended-filter-toolbar">
-        <LotTableFilters q={params?.q} status={lotStatus} warehouse={warehouse} warehouses={warehouses} />
+        <LotTableFilters
+          q={params?.q}
+          status={lotStatus}
+          warehouse={warehouse}
+          sort={lotSort}
+          warehouses={warehouses}
+        />
         {canExport ? (
           <ExportDownloadButton
             fallbackFileName="재고-현황.xlsx"
@@ -52,7 +81,23 @@ export default async function LotsPage({
           />
         ) : null}
       </div>
-      <Panel title="창고별 입고분 목록" note={`${lotSourceLabel(lotRows)} · 유통기한 빠른 순${lotStatus ? ` · ${lotStatusLabel(lotStatus)}` : ""}${warehouse ? ` · ${warehouseLabel(warehouse, warehouseLabels)}` : ""}`}>
+      <Panel
+        headerAction={(
+          <LotSortControl
+            defaultSort={DEFAULT_LOT_SORT}
+            options={LOT_SORT_KINDS.map((value) => ({
+              label: lotSortLabel(value),
+              value
+            }))}
+            q={params?.q?.trim()}
+            sort={lotSort}
+            status={lotStatus}
+            warehouse={warehouse}
+          />
+        )}
+        title="창고별 입고분 목록"
+        note={`${lotSourceLabel(lotRows)} · ${lotStatus === "ALL" ? "전체 상태" : lotStatus ? lotStatusLabel(lotStatus) : "재고 보유"}${warehouse ? ` · ${warehouseLabel(warehouse, warehouseLabels)}` : ""}`}
+      >
         <div className="lot-inventory-table">
           <Table>
             <thead>
@@ -105,7 +150,18 @@ export default async function LotsPage({
             </tbody>
           </Table>
         </div>
-        <Pagination page={data.page} pathname="/lots" preserve={{ q: params?.q, status: lotStatus, warehouse }} total={data.total} totalPages={data.totalPages} />
+        <Pagination
+          page={data.page}
+          pathname="/lots"
+          preserve={{
+            q: params?.q,
+            status: lotStatus,
+            warehouse,
+            sort: lotSort === DEFAULT_LOT_SORT ? undefined : lotSort
+          }}
+          total={data.total}
+          totalPages={data.totalPages}
+        />
       </Panel>
     </AppShell>
   );

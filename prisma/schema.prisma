@@ -242,6 +242,7 @@ model ShipmentItem {
   shipmentId   String
   reagentLotId String
   allergenId   String
+  warehouse    String       @default("FINISHED_GOODS")
   quantity     Int
   shipment     Shipment     @relation(fields: [shipmentId], references: [id])
   reagentLot   ReagentLot   @relation(fields: [reagentLotId], references: [id])
@@ -249,6 +250,8 @@ model ShipmentItem {
 
   @@index([shipmentId])
   @@index([reagentLotId])
+  @@index([warehouse])
+  @@index([reagentLotId, warehouse])
 }
 
 model ReplacementPolicy {

@@ -21,33 +21,52 @@ export async function shipOrder(formData: FormData) {
 export async function confirmShipment(formData: FormData) {
   const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
   const orderId = formString(formData, "orderId");
+  const shipmentMemo = formString(formData, "shipmentMemo");
   const lotIds = formData.getAll("lotId");
+  const warehouses = formData.getAll("warehouse");
   const quantities = formData.getAll("quantity");
 
   if (!orderId) {
     await fail("출고 처리할 주문을 찾을 수 없습니다.");
   }
 
-  if (lotIds.length !== quantities.length || lotIds.length === 0) {
+  if (
+    lotIds.length !== quantities.length ||
+    lotIds.length !== warehouses.length ||
+    lotIds.length === 0
+  ) {
     await fail("출고 LOT 배정 정보를 확인하세요.");
+  }
+
+  if (shipmentMemo.length > 500) {
+    await fail("출고 메모는 500자 이하로 입력하세요.");
   }
 
   const allocations: ShipmentAllocationInput[] = [];
   for (let index = 0; index < lotIds.length; index += 1) {
     const lotValue = lotIds[index];
+    const warehouseValue = warehouses[index];
     const quantityValue = quantities[index];
     const lotId = typeof lotValue === "string" ? lotValue : "";
+    const warehouse = typeof warehouseValue === "string" ? warehouseValue : "";
     const quantityText = typeof quantityValue === "string" ? quantityValue : "";
     const quantity = Number(quantityText);
-    if (!lotId || !Number.isInteger(quantity) || quantity < 0) {
+    if (!lotId || !warehouse || !Number.isInteger(quantity) || quantity < 0) {
       await fail("출고 수량은 0 이상의 정수로 입력하세요.");
     }
-    if (quantity > 0) allocations.push({ lotId, quantity });
+    if (quantity > 0) allocations.push({ lotId, warehouse, quantity });
   }
 
   let shortageOrderNo: string | null = null;
   try {
-    const shipment = await processShipment(prisma, orderId, user.id, undefined, allocations);
+    const shipment = await processShipment(
+      prisma,
+      orderId,
+      user.id,
+      undefined,
+      allocations,
+      shipmentMemo || undefined
+    );
     shortageOrderNo = shipment.shortageOrder?.orderNo ?? null;
   } catch (error) {
     unstable_rethrow(error);
@@ -88,6 +107,14 @@ export async function confirmShipment(formData: FormData) {
 
     if (error instanceof Error && error.message === "ALLOCATION_UNAVAILABLE") {
       await fail("선택한 LOT의 재고 또는 출고 가능 상태가 변경되었습니다. 배정안을 다시 확인하세요.");
+    }
+
+    if (error instanceof Error && error.message === "SHIPMENT_MEMO_TOO_LONG") {
+      await fail("출고 메모는 500자 이하로 입력하세요.");
+    }
+
+    if (error instanceof Error && error.message === "PARTIAL_SHIPMENT_MEMO_REQUIRED") {
+      await fail("부분 출고 시에는 출고 메모를 반드시 입력하세요.");
     }
 
     if (error instanceof Error && error.message === "TRANSACTION_CONFLICT") {
@@ -139,6 +166,10 @@ export async function cancelShipment(formData: FormData) {
 
     if (error instanceof Error && error.message === "SHIPMENT_ALREADY_CANCELLED") {
       await fail("이미 취소된 출고 건입니다.");
+    }
+
+    if (error instanceof Error && error.message === "SHORTAGE_REORDER_ALREADY_SHIPPED") {
+      await fail("부족분 재주문이 이미 출고되어 원출고를 취소할 수 없습니다. 부족분 출고를 먼저 취소하세요.");
     }
 
     if (error instanceof Error && error.message === "TRANSACTION_CONFLICT") {

@@ -134,6 +134,7 @@ LOT는 다음 값의 조합으로 식별한다.
 | shipmentId | 출고 ID |
 | reagentLotId | 실제 출고된 LOT ID |
 | allergenId | 항원 ID |
+| warehouse | 실제 출고 수량을 차감한 창고 코드 |
 | quantity | 출고수량 |
 
 ### 2.10 재고이동 StockMovement

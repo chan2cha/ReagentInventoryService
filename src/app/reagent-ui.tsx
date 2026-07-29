@@ -257,17 +257,24 @@ export function StatusBadge({ status }: { status: LotStatus | OrderStatus | Orde
 export function Panel({
   title,
   note,
+  headerAction,
   children
 }: {
   title: string;
   note?: string;
+  headerAction?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="panel">
-      <div className="panel-header">
+      <div className={`panel-header${headerAction ? " panel-header-with-action" : ""}`}>
         <h2>{title}</h2>
-        {note ? <span>{note}</span> : null}
+        {note || headerAction ? (
+          <div className="panel-header-tools">
+            {note ? <span>{note}</span> : null}
+            {headerAction}
+          </div>
+        ) : null}
       </div>
       {children}
     </section>

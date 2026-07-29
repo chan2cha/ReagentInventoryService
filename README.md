@@ -232,6 +232,7 @@ npm run test:integration
 | <code>prisma/migrations/20260721150000_remove_order_templates/migration.sql</code> | 더 이상 사용하지 않는 주문 세트 품목과 본문 테이블을 제거합니다. |
 | <code>prisma/migrations/20260721160000_add_transfer_movement_type/migration.sql</code> | PostgreSQL 커밋 경계를 지켜 <code>StockMovementType.TRANSFER</code>를 선행 추가합니다. |
 | <code>prisma/migrations/20260721161000_add_warehouse_inventory/migration.sql</code> | 기존 현재고를 완제품 창고로 이관하고 <code>WarehouseStock</code> 단일 수량 원천과 이동 제약·인덱스를 적용합니다. |
+| <code>prisma/migrations/20260729140000_add_shipment_item_warehouse/migration.sql</code> | 출고 품목에 실제 출고 창고를 저장하고 기존 출고 이력은 완제품 창고로 보존합니다. |
 
 ## <code>src/app/</code> 공통 파일
 
@@ -411,7 +412,7 @@ npm run test:integration
 | <code>src/app/shipments/actions.ts</code> | 주문별 LOT 배정 수량을 검증해 출고를 확정하거나 취소·재고 복구를 수행합니다. |
 | <code>src/app/shipments/page.tsx</code> | <code>/shipments</code> 출고 대기·추천 LOT·출고 이력과 출고·취소 UI입니다. |
 | <code>src/app/shipments/shipment-allocation-dialog.tsx</code> | FEFO 추천값과 품목별 실제 출고 수량을 확인하는 다이얼로그입니다. |
-| <code>src/app/shipments/shipment-data.ts</code> | 출고 대기 주문, 완제품 창고의 FEFO 추천·사용 가능 LOT와 출고 이력을 조회합니다. |
+| <code>src/app/shipments/shipment-data.ts</code> | 출고 대기 주문, 활성 창고별 FEFO 추천·사용 가능 LOT와 출고 이력을 조회합니다. |
 
 ### 사용자 관리
 
@@ -496,7 +497,7 @@ UI와 데이터 영속화 실행에서 분리한 입력 정규화와 핵심 업�
 
 | 파일 | 역할 |
 |---|---|
-| <code>src/integration/database.integration.test.ts</code> | 격리 DB에서 완제품 FEFO 출고·취소, 창고 부분 이동·재고 경쟁, 주문번호, 내보내기와 선제 교환의 실제 트랜잭션을 검증합니다. |
+| <code>src/integration/database.integration.test.ts</code> | 격리 DB에서 다중 창고 FEFO 출고·취소, 창고 부분 이동·재고 경쟁, 주문번호, 내보내기와 선제 교환의 실제 트랜잭션을 검증합니다. |
 | <code>src/test/setup.ts</code> | 플래시 메시지 모듈을 공통 mock해 쿠키 부작용 없이 서버 동작을 테스트하도록 설정합니다. |
 
 <code>*.test.ts</code>와 <code>*.test.tsx</code>는 외부 서비스 없이 실행하는 단위·정책·컴포넌트 테스트입니다. <code>*.integration.test.ts</code>는 실제 PostgreSQL 트랜잭션을 사용하므로 전용 테스트 DB가 필요합니다.

@@ -5,13 +5,26 @@ import { lotStatusKindFromSnapshot } from "./lot-status";
 describe("export query filters", () => {
   it("builds the shared LOT search predicate from a trimmed query", () => {
     expect(buildWarehouseStockWhere({ q: "  EGG  " })).toEqual({
-      reagentLot: { is: { OR: [
-        { lotNo: { contains: "EGG", mode: "insensitive" } },
-        { allergen: { is: { name: { contains: "EGG", mode: "insensitive" } } } },
-        { allergen: { is: { code: { contains: "EGG", mode: "insensitive" } } } }
-      ] } }
+      AND: [
+        { quantity: { gt: 0 } },
+        { reagentLot: { is: { OR: [
+          { lotNo: { contains: "EGG", mode: "insensitive" } },
+          { allergen: { is: { name: { contains: "EGG", mode: "insensitive" } } } },
+          { allergen: { is: { code: { contains: "EGG", mode: "insensitive" } } } }
+        ] } } }
+      ]
     });
-    expect(buildWarehouseStockWhere({ q: "   " })).toEqual({});
+    expect(buildWarehouseStockWhere({ q: "   " })).toEqual({ quantity: { gt: 0 } });
+    expect(buildWarehouseStockWhere({ status: "ALL" })).toEqual({});
+    expect(buildWarehouseStockWhere({ status: "OUT_OF_STOCK" })).toEqual({ quantity: 0 });
+    expect(buildWarehouseStockWhere({
+      status: "EXPIRED"
+    }, new Date("2026-07-13T03:00:00.000Z"))).toEqual({
+      quantity: { not: 0 },
+      reagentLot: {
+        is: { expirationDate: { lt: new Date("2026-07-13T00:00:00.000Z") } }
+      }
+    });
 
     const now = new Date("2026-07-13T03:00:00.000Z");
     expect(buildWarehouseStockWhere({
@@ -41,7 +54,7 @@ describe("export query filters", () => {
       lotStatusKindFromSnapshot({ currentQuantity: 1, expirationDate: "2026-08-12" }, now),
       lotStatusKindFromSnapshot({ currentQuantity: 1, expirationDate: "2026-08-13" }, now),
       lotStatusKindFromSnapshot({ currentQuantity: 5, expirationDate: "2026-08-13" }, now)
-    ]).toEqual(["EXPIRED", "OUT_OF_STOCK", "EXPIRING", "NORMAL", "NORMAL"]);
+    ]).toEqual(["OUT_OF_STOCK", "OUT_OF_STOCK", "EXPIRING", "NORMAL", "NORMAL"]);
   });
 
   it("combines movement search, kind, and inclusive Korean calendar dates", () => {

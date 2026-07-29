@@ -120,6 +120,7 @@ erDiagram
     string shipmentId FK
     string reagentLotId FK
     string allergenId FK
+    string warehouse
     int quantity
   }
 
@@ -194,7 +195,7 @@ erDiagram
 | Order image | `OrderImage.orderId` is unique; content is JPEG/PNG/WebP, 1–3 MiB, and byte length must match metadata. |
 | LOT uniqueness | `ReagentLot` is unique by `allergenId + lotNo + expirationDate`. |
 | Warehouse balance unit | Inventory is managed by the unique `reagentLotId + warehouse` balance; `ReagentLot` does not duplicate current quantity. |
-| Shipment allocation | Actual outbound stock is recorded through `ShipmentItem.reagentLotId`. |
+| Shipment allocation | Actual outbound stock is recorded through `ShipmentItem.reagentLotId` and `ShipmentItem.warehouse`. |
 | Finished-goods shipment | Normal and replacement shipments allocate only `FINISHED_GOODS` balances. |
 | Movement audit | Stock changes are tracked through `StockMovement`; a partial warehouse move is one `TRANSFER` row with source and destination. |
 | Disposal distinction | Moving into `DISPOSAL` preserves physical quantity; `DISPOSE` removes quantity after actual disposal. |

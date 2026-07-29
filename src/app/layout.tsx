@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ConfirmationDialogProvider } from "./confirmation-dialog";
 
 export const metadata: Metadata = {
   title: "신영로파마 시약 재고 관리",
@@ -13,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body><ConfirmationDialogProvider>{children}</ConfirmationDialogProvider></body>
     </html>
   );
 }

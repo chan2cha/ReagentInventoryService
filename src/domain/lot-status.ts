@@ -11,6 +11,7 @@ export const LOT_STATUS_KINDS = [
 
 export type LotStatusKind = (typeof LOT_STATUS_KINDS)[number];
 export type LotStatusLabel = "정상" | "품절" | "유통기한 임박" | "유통기한 만료";
+export type LotStatusFilter = LotStatusKind | "ALL";
 
 const lotStatusLabels = {
   NORMAL: "정상",
@@ -21,6 +22,10 @@ const lotStatusLabels = {
 
 export function isLotStatusKind(value: string): value is LotStatusKind {
   return (LOT_STATUS_KINDS as readonly string[]).includes(value);
+}
+
+export function isLotStatusFilter(value: string): value is LotStatusFilter {
+  return value === "ALL" || isLotStatusKind(value);
 }
 
 export function lotStatusLabel(status: LotStatusKind): LotStatusLabel {
@@ -35,8 +40,8 @@ export function lotStatusKindFromSnapshot(
   now = new Date()
 ): LotStatusKind {
   const days = daysUntilDateOnly(lot.expirationDate, now);
-  if (days < 0) return "EXPIRED";
   if (lot.currentQuantity === 0) return "OUT_OF_STOCK";
+  if (days < 0) return "EXPIRED";
   if (days <= 30) return "EXPIRING";
   return "NORMAL";
 }

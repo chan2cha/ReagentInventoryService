@@ -97,6 +97,20 @@ function finishedGoodsTotal() {
   });
 }
 
+async function shippableStockTotal() {
+  const warehouses = await prisma.warehouse.findMany({
+    where: { isActive: true },
+    select: { code: true }
+  });
+  return prisma.warehouseStock.aggregate({
+    where: {
+      warehouse: { in: warehouses.map((warehouse) => warehouse.code) },
+      reagentLot: { is: { allergenId } }
+    },
+    _sum: { quantity: true }
+  });
+}
+
 async function finishedGoodsQuantity(lotId: string) {
   const stock = await prisma.warehouseStock.findUniqueOrThrow({
     where: {
@@ -158,6 +172,74 @@ describe("database transactions", () => {
     await expect(processShipment(prisma, order.id, userId, shipmentNow)).rejects.toThrow("ORDER_ALREADY_SHIPPED");
   });
 
+  it("ships and restores the selected warehouse when one LOT has stock in multiple warehouses", async () => {
+    const lot = await createLot({
+      allergenId,
+      lotNo: `${runId}-multi-warehouse`,
+      expirationDate: new Date("2031-04-01"),
+      receivedDate: new Date("2029-01-01"),
+      initialQuantity: 5,
+      currentQuantity: 2
+    });
+    await prisma.warehouseStock.create({
+      data: {
+        reagentLotId: lot.id,
+        warehouse: "SAMPLE",
+        quantity: 3
+      }
+    });
+    const order = await createOrder(3);
+    const shipment = await processShipment(
+      prisma,
+      order.id,
+      userId,
+      shipmentNow,
+      [{ lotId: lot.id, warehouse: "SAMPLE", quantity: 3 }]
+    );
+
+    expect(await prisma.shipmentItem.findMany({
+      where: { shipmentId: shipment.id },
+      select: { reagentLotId: true, warehouse: true, quantity: true }
+    })).toEqual([{ reagentLotId: lot.id, warehouse: "SAMPLE", quantity: 3 }]);
+    expect(await prisma.warehouseStock.findUniqueOrThrow({
+      where: {
+        reagentLotId_warehouse: {
+          reagentLotId: lot.id,
+          warehouse: "FINISHED_GOODS"
+        }
+      },
+      select: { quantity: true }
+    })).toEqual({ quantity: 2 });
+    expect(await prisma.warehouseStock.findUniqueOrThrow({
+      where: {
+        reagentLotId_warehouse: {
+          reagentLotId: lot.id,
+          warehouse: "SAMPLE"
+        }
+      },
+      select: { quantity: true }
+    })).toEqual({ quantity: 0 });
+
+    await reverseShipment(prisma, shipment.id, userId, "창고별 복구 검증");
+
+    expect(await prisma.warehouseStock.findUniqueOrThrow({
+      where: {
+        reagentLotId_warehouse: {
+          reagentLotId: lot.id,
+          warehouse: "SAMPLE"
+        }
+      },
+      select: { quantity: true }
+    })).toEqual({ quantity: 3 });
+    expect(await prisma.stockMovement.findFirstOrThrow({
+      where: {
+        refType: "SHIPMENT_CANCEL",
+        refId: shipment.id
+      },
+      select: { warehouse: true }
+    })).toEqual({ warehouse: "SAMPLE" });
+  });
+
   it("exports filtered inventory and resolves outbound movement references", async () => {
     const lotNo = `${runId}-export`;
     await createLot({
@@ -204,9 +286,19 @@ describe("database transactions", () => {
 
   it("partially ships available stock and creates a shortage reorder", async () => {
     const order = await createOrder(10000);
-    const before = await finishedGoodsTotal();
-    const shipment = await processShipment(prisma, order.id, userId, shipmentNow);
-    const after = await finishedGoodsTotal();
+    const before = await shippableStockTotal();
+    await expect(
+      processShipment(prisma, order.id, userId, shipmentNow)
+    ).rejects.toThrow("PARTIAL_SHIPMENT_MEMO_REQUIRED");
+    const shipment = await processShipment(
+      prisma,
+      order.id,
+      userId,
+      shipmentNow,
+      undefined,
+      "재고 부족으로 가용 수량 우선 출고"
+    );
+    const after = await shippableStockTotal();
     const shipmentItems = await prisma.shipmentItem.findMany({ where: { shipmentId: shipment.id } });
     const shippedQuantity = shipmentItems.reduce((sum, item) => sum + item.quantity, 0);
     const shortageOrder = await prisma.order.findUniqueOrThrow({
@@ -228,7 +320,55 @@ describe("database transactions", () => {
 
     await reverseShipment(prisma, shipment.id, userId, "partial shipment reversal");
     expect((await prisma.order.findUniqueOrThrow({ where: { id: shortageOrder.id } })).status).toBe("CANCELLED");
-    expect((await finishedGoodsTotal())._sum.quantity).toBe(before._sum.quantity);
+    expect((await shippableStockTotal())._sum.quantity).toBe(before._sum.quantity);
+  });
+
+  it("blocks original shipment cancellation after its shortage reorder is shipped", async () => {
+    const selectedLot = await createLot({
+      allergenId,
+      lotNo: `${runId}-manual-partial`,
+      expirationDate: new Date("2031-06-01"),
+      receivedDate: new Date("2029-01-01"),
+      initialQuantity: 1,
+      currentQuantity: 1
+    });
+    const order = await createOrder(2);
+    const originalShipment = await processShipment(
+      prisma,
+      order.id,
+      userId,
+      shipmentNow,
+      [{ lotId: selectedLot.id, warehouse: "FINISHED_GOODS", quantity: 1 }],
+      "대체 LOT 우선 출고"
+    );
+    expect(originalShipment.memo).toBe("수동 LOT 배정 출고 / 메모: 대체 LOT 우선 출고");
+    expect(await prisma.auditLog.count({
+      where: {
+        action: "SHIPMENT_CREATE",
+        entityId: originalShipment.id,
+        description: { contains: "대체 LOT 우선 출고" }
+      }
+    })).toBe(1);
+    const shortageOrder = await prisma.order.findUniqueOrThrow({
+      where: { shortageFromShipmentId: originalShipment.id }
+    });
+
+    await processShipment(prisma, shortageOrder.id, userId, shipmentNow);
+    const stockBeforeCancellation = await shippableStockTotal();
+
+    await expect(
+      reverseShipment(prisma, originalShipment.id, userId, "원출고 취소 시도")
+    ).rejects.toThrow("SHORTAGE_REORDER_ALREADY_SHIPPED");
+
+    expect(await prisma.shipment.findUniqueOrThrow({
+      where: { id: originalShipment.id },
+      select: { status: true }
+    })).toEqual({ status: "SHIPPED" });
+    expect((await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      select: { status: true }
+    })).status).toBe("SHIPPED");
+    expect((await shippableStockTotal())._sum.quantity).toBe(stockBeforeCancellation._sum.quantity);
   });
 
   it("restores lot quantities and order status when shipment is cancelled", async () => {
@@ -283,7 +423,7 @@ describe("database transactions", () => {
 
   it("serializes duplicate shipment and duplicate reversal requests", async () => {
     const order = await createOrder(1);
-    const before = await finishedGoodsTotal();
+    const before = await shippableStockTotal();
     const shipmentResults = await Promise.allSettled([
       processShipment(prisma, order.id, userId, shipmentNow),
       processShipment(concurrentPrisma, order.id, userId, shipmentNow)
@@ -292,7 +432,7 @@ describe("database transactions", () => {
     expect(shipmentResults.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(shipmentResults.filter((result) => result.status === "rejected")).toHaveLength(1);
     expect(await prisma.shipment.count({ where: { orderId: order.id, status: "SHIPPED" } })).toBe(1);
-    expect((await finishedGoodsTotal())._sum.quantity).toBe((before._sum.quantity ?? 0) - 1);
+    expect((await shippableStockTotal())._sum.quantity).toBe((before._sum.quantity ?? 0) - 1);
 
     const shipment = await prisma.shipment.findFirstOrThrow({
       where: {
@@ -307,7 +447,7 @@ describe("database transactions", () => {
 
     expect(reversalResults.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(reversalResults.filter((result) => result.status === "rejected")).toHaveLength(1);
-    expect((await finishedGoodsTotal())._sum.quantity).toBe(before._sum.quantity);
+    expect((await shippableStockTotal())._sum.quantity).toBe(before._sum.quantity);
     expect(await prisma.stockMovement.count({
       where: {
         refType: "SHIPMENT_CANCEL",
@@ -318,7 +458,7 @@ describe("database transactions", () => {
 
   it("keeps order cancellation and shipment mutually exclusive under contention", async () => {
     const order = await createOrder(1);
-    const before = await finishedGoodsTotal();
+    const before = await shippableStockTotal();
     const results = await Promise.allSettled([
       processShipment(prisma, order.id, userId, shipmentNow),
       cancelPendingOrder(concurrentPrisma, order.id, userId, "동시 주문 취소")
@@ -334,7 +474,7 @@ describe("database transactions", () => {
         status: "SHIPPED"
       }
     });
-    const after = await finishedGoodsTotal();
+    const after = await shippableStockTotal();
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);

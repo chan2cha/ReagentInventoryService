@@ -5,7 +5,7 @@ import { buildWarehouseStockWhere } from "@/domain/export-filters";
 import {
   lotStatusFromSnapshot,
   lotStatusLabel,
-  type LotStatusKind,
+  type LotStatusFilter,
   type LotStatusLabel
 } from "@/domain/lot-status";
 import type { WarehouseKind } from "@/domain/warehouse";
@@ -28,6 +28,34 @@ export type LotRow = {
   source: "database" | "sample";
 };
 
+export const LOT_SORT_KINDS = [
+  "EXPIRATION_ASC",
+  "RECEIVED_DESC",
+  "RECEIVED_ASC",
+  "QUANTITY_DESC",
+  "QUANTITY_ASC",
+  "LOT_NO_ASC"
+] as const;
+
+export type LotSortKind = (typeof LOT_SORT_KINDS)[number];
+
+export const DEFAULT_LOT_SORT: LotSortKind = "EXPIRATION_ASC";
+
+export function isLotSortKind(value: string): value is LotSortKind {
+  return LOT_SORT_KINDS.includes(value as LotSortKind);
+}
+
+export function lotSortLabel(sort: LotSortKind) {
+  return {
+    EXPIRATION_ASC: "유통기한 빠른 순",
+    RECEIVED_DESC: "최근 입고 순",
+    RECEIVED_ASC: "오래된 입고 순",
+    QUANTITY_DESC: "수량 많은 순",
+    QUANTITY_ASC: "수량 적은 순",
+    LOT_NO_ASC: "제조번호 순"
+  }[sort];
+}
+
 const warehouseStockRowSelect = {
   reagentLotId: true,
   warehouse: true,
@@ -47,12 +75,31 @@ const warehouseStockRowSelect = {
   }
 } satisfies Prisma.WarehouseStockSelect;
 
-const warehouseStockRowOrder = [
-  { reagentLot: { expirationDate: "asc" as const } },
-  { reagentLot: { lotNo: "asc" as const } },
-  { warehouse: "asc" as const },
-  { reagentLotId: "asc" as const }
-];
+function warehouseStockRowOrder(sort: LotSortKind) {
+  const tieBreakers = [
+    { reagentLot: { expirationDate: "asc" as const } },
+    { reagentLot: { lotNo: "asc" as const } },
+    { warehouse: "asc" as const },
+    { reagentLotId: "asc" as const }
+  ];
+
+  const primaryOrder: Record<
+    LotSortKind,
+    Prisma.WarehouseStockOrderByWithRelationInput[]
+  > = {
+    EXPIRATION_ASC: [],
+    RECEIVED_DESC: [{ reagentLot: { receivedDate: "desc" } }],
+    RECEIVED_ASC: [{ reagentLot: { receivedDate: "asc" } }],
+    QUANTITY_DESC: [{ quantity: "desc" }],
+    QUANTITY_ASC: [{ quantity: "asc" }],
+    LOT_NO_ASC: [{ reagentLot: { lotNo: "asc" } }]
+  };
+
+  return [...primaryOrder[sort], ...tieBreakers]
+    .filter((order, index, orders) => (
+      index === orders.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(order))
+    ));
+}
 
 type DatabaseWarehouseStockRow = Prisma.WarehouseStockGetPayload<{
   select: typeof warehouseStockRowSelect;
@@ -89,12 +136,13 @@ function toLotRow(stock: DatabaseWarehouseStockRow, now: Date): LotRow {
 
 function sampleLotRows(
   q = "",
-  status?: LotStatusKind,
+  status?: LotStatusFilter,
   warehouse?: WarehouseKind,
+  sort: LotSortKind = DEFAULT_LOT_SORT,
   now = new Date()
 ): LotRow[] {
   const query = q.trim().toLocaleLowerCase("ko-KR");
-  const statusLabel = status ? lotStatusLabel(status) : undefined;
+  const statusLabel = status && status !== "ALL" ? lotStatusLabel(status) : undefined;
 
   return lots
     .map((lot) => {
@@ -120,20 +168,37 @@ function sampleLotRows(
     })
     .filter((lot) => {
       if (warehouse && lot.warehouse !== warehouse) return false;
+      if (!status && lot.currentQuantity === 0) return false;
       if (statusLabel && lot.status !== statusLabel) return false;
       if (!query) return true;
 
       return [lot.allergenName, lot.allergenCode, lot.lotNo]
         .some((value) => value.toLocaleLowerCase("ko-KR").includes(query));
     })
-    .sort((a, b) => a.expirationDate.localeCompare(b.expirationDate));
+    .sort((a, b) => {
+      const primary = {
+        EXPIRATION_ASC: () => a.expirationDate.localeCompare(b.expirationDate),
+        RECEIVED_DESC: () => b.receivedDate.localeCompare(a.receivedDate),
+        RECEIVED_ASC: () => a.receivedDate.localeCompare(b.receivedDate),
+        QUANTITY_DESC: () => b.currentQuantity - a.currentQuantity,
+        QUANTITY_ASC: () => a.currentQuantity - b.currentQuantity,
+        LOT_NO_ASC: () => a.lotNo.localeCompare(b.lotNo, "ko-KR")
+      }[sort]();
+
+      return primary
+        || a.expirationDate.localeCompare(b.expirationDate)
+        || a.lotNo.localeCompare(b.lotNo, "ko-KR")
+        || a.warehouse.localeCompare(b.warehouse)
+        || a.lotId.localeCompare(b.lotId);
+    });
 }
 
 export async function getLotRows(
   page: number,
   q = "",
-  status?: LotStatusKind,
+  status?: LotStatusFilter,
   warehouse?: WarehouseKind,
+  sort: LotSortKind = DEFAULT_LOT_SORT,
   now = new Date()
 ): Promise<PaginatedResult<LotRow>> {
   try {
@@ -143,7 +208,7 @@ export async function getLotRows(
     const stockQuery = {
       where,
       select: warehouseStockRowSelect,
-      orderBy: warehouseStockRowOrder,
+      orderBy: warehouseStockRowOrder(sort),
       skip: requestedSkip,
       take: PAGE_SIZE
     } satisfies Prisma.WarehouseStockFindManyArgs;
@@ -161,7 +226,7 @@ export async function getLotRows(
     return handleDataSourceError(
       "lots",
       error,
-      () => paginateRows(sampleLotRows(q, status, warehouse, now), page)
+      () => paginateRows(sampleLotRows(q, status, warehouse, sort, now), page)
     );
   }
 }

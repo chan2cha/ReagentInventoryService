@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { handleDataSourceError } from "@/lib/data-source";
-import { addDateOnlyDays, dateOnlyUtc, daysUntilDateOnly, koreaDateKey } from "@/lib/date";
-import { findAllergen, findClient, formatDate, lots, orderItemSummary, orders } from "../reagent-data";
-import { lotStatus, type LotStatus, type OrderOriginLabel, type OrderStatus, type ShipmentFulfillmentLabel } from "../reagent-data";
+import { addDateOnlyDays, dateOnlyUtc, koreaDateKey } from "@/lib/date";
+import { findAllergen, findClient, formatDate, orderItemSummary, orders } from "../reagent-data";
+import { type OrderOriginLabel, type OrderStatus, type ShipmentFulfillmentLabel } from "../reagent-data";
 import { PAGE_SIZE,pageMeta,paginateRows,type PageMeta } from "@/lib/pagination";
 import { pendingShipmentOrderWhere } from "@/domain/pending-shipment";
 import type { ItemQuantity } from "../item-quantity-summary";
@@ -29,18 +29,16 @@ export type ShipmentAllocationItemRow = {
   name: string;
   quantity: number;
   availableQuantity: number;
-  lots: Array<{ id: string; lotNo: string; expirationDate: string; currentQuantity: number; recommendedQuantity: number }>;
-};
-
-export type RecommendedLotRow = {
-  id: string;
-  allergenCode: string;
-  allergenName: string;
-  lotNo: string;
-  expirationDate: string;
-  currentQuantity: number;
-  status: LotStatus;
-  source: "database" | "sample";
+  lots: Array<{
+    id: string;
+    lotId: string;
+    lotNo: string;
+    warehouse: string;
+    warehouseName: string;
+    expirationDate: string;
+    currentQuantity: number;
+    recommendedQuantity: number;
+  }>;
 };
 
 export type ShipmentHistoryRow = {
@@ -50,8 +48,10 @@ export type ShipmentHistoryRow = {
   shippedAt: string;
   itemSummary: string;
   itemDetails: ItemQuantity[];
+  memo: string;
   status: ShipmentFulfillmentLabel;
   canCancel: boolean;
+  cancellationBlockedReason?: string;
   source: "database" | "sample";
 };
 
@@ -78,18 +78,6 @@ function mapShipmentFulfillmentStatus(
   return fulfillmentStatus === "PARTIAL" ? "부분 출고" : "정상 출고";
 }
 
-function statusFromDbLot(lot: {
-  quantity: number;
-  expirationDate: Date;
-}): LotStatus {
-  const days = daysUntilDateOnly(lot.expirationDate);
-
-  if (days < 0) return "유통기한 만료";
-  if (lot.quantity === 0) return "품절";
-  if (days <= 30) return "유통기한 임박";
-  return "정상";
-}
-
 function sampleShipmentOrders(): ShipmentOrderRow[] {
   return orders
     .filter((order) => order.status === "접수" || order.status === "준비중")
@@ -111,29 +99,6 @@ function sampleShipmentOrders(): ShipmentOrderRow[] {
     });
 }
 
-function sampleRecommendedLots(): RecommendedLotRow[] {
-  const today = koreaDateKey();
-
-  return lots
-    .filter((lot) => lot.quantity > 0 && lot.receivedDate <= today && lot.expirationDate >= today)
-    .sort((a, b) => a.expirationDate.localeCompare(b.expirationDate))
-    .slice(0, 5)
-    .map((lot) => {
-      const allergen = findAllergen(lot.allergenId);
-
-      return {
-        id: String(lot.id),
-        allergenCode: allergen?.code ?? "-",
-        allergenName: allergen?.name ?? "-",
-        lotNo: lot.lotNo,
-        expirationDate: lot.expirationDate,
-        currentQuantity: lot.quantity,
-        status: lotStatus(lot),
-        source: "sample"
-      };
-    });
-}
-
 export async function getShipmentPageData(
   orderPage: number,
   historyPage: number,
@@ -142,7 +107,6 @@ export async function getShipmentPageData(
   orderOrigin: ShipmentOrderOrigin = "SHORTAGE_REORDER"
 ): Promise<{
   orders: ShipmentOrderRow[];
-  recommendedLots: RecommendedLotRow[];
   shipmentHistory: ShipmentHistoryRow[];
   orderMeta:PageMeta; historyMeta:PageMeta;
 }> {
@@ -169,7 +133,17 @@ export async function getShipmentPageData(
     ] } : {}) };
     const [orderTotal,historyTotal]=await Promise.all([prisma.order.count({where:orderWhere}),prisma.shipment.count({where:historyWhere})]);
     const orderMeta=pageMeta(orderPage,orderTotal); const historyMeta=pageMeta(historyPage,historyTotal);
-    const [dbOrders, dbLots, dbShipments] = await Promise.all([
+    const warehouses = await prisma.warehouse.findMany({
+      select: { code: true, name: true, isActive: true },
+      orderBy: { name: "asc" }
+    });
+    const activeWarehouseCodes = warehouses
+      .filter((warehouse) => warehouse.isActive)
+      .map((warehouse) => warehouse.code);
+    const warehouseNames = new Map(
+      warehouses.map((warehouse) => [warehouse.code, warehouse.name])
+    );
+    const [dbOrders, dbShipments] = await Promise.all([
       prisma.order.findMany({
         where: orderWhere,
         include: {
@@ -183,25 +157,6 @@ export async function getShipmentPageData(
         orderBy: {
           createdAt: "asc"
         },skip:orderMeta.skip,take:PAGE_SIZE
-      }),
-      prisma.warehouseStock.findMany({
-        where: {
-          warehouse: "FINISHED_GOODS",
-          quantity: { gt: 0 },
-          reagentLot: { is: {
-            expirationDate: { gte: today },
-            receivedDate: { lt: tomorrow },
-            isActive: true
-          } }
-        },
-        include: {
-          reagentLot: { include: { allergen: true } }
-        },
-        orderBy: [
-          { reagentLot: { expirationDate: "asc" } },
-          { reagentLot: { lotNo: "asc" } }
-        ],
-        take: 5
       }),
       prisma.shipment.findMany({
         where: historyWhere,
@@ -219,6 +174,11 @@ export async function getShipmentPageData(
                 }
               }
             }
+          },
+          shortageReorder: {
+            select: {
+              status: true
+            }
           }
         },
         orderBy: {
@@ -228,9 +188,9 @@ export async function getShipmentPageData(
       })
     ]);
     const allocationAllergenIds = [...new Set(dbOrders.flatMap((order) => order.items.map((item) => item.allergenId)))];
-    const allocationStocks = allocationAllergenIds.length === 0 ? [] : await prisma.warehouseStock.findMany({
+    const allocationStocks = allocationAllergenIds.length === 0 || activeWarehouseCodes.length === 0 ? [] : await prisma.warehouseStock.findMany({
       where: {
-        warehouse: "FINISHED_GOODS",
+        warehouse: { in: activeWarehouseCodes },
         quantity: { gt: 0 },
         reagentLot: { is: {
           allergenId: { in: allocationAllergenIds },
@@ -242,7 +202,8 @@ export async function getShipmentPageData(
       include: { reagentLot: true },
       orderBy: [
         { reagentLot: { expirationDate: "asc" } },
-        { reagentLot: { lotNo: "asc" } }
+        { reagentLot: { lotNo: "asc" } },
+        { warehouse: "asc" }
       ]
     });
 
@@ -265,8 +226,11 @@ export async function getShipmentPageData(
             const recommendedQuantity = Math.min(remaining, stock.quantity);
             remaining -= recommendedQuantity;
             return {
-              id: stock.reagentLotId,
+              id: `${stock.reagentLotId}:${stock.warehouse}`,
+              lotId: stock.reagentLotId,
               lotNo: stock.reagentLot.lotNo,
+              warehouse: stock.warehouse,
+              warehouseName: warehouseNames.get(stock.warehouse) ?? stock.warehouse,
               expirationDate: stock.reagentLot.expirationDate.toISOString().slice(0, 10),
               currentQuantity: stock.quantity,
               recommendedQuantity
@@ -275,37 +239,30 @@ export async function getShipmentPageData(
           return { id: item.id, code: item.allergen.code, name: item.allergen.name, quantity: item.quantity, availableQuantity: lotsForItem.reduce((sum, lot) => sum + lot.currentQuantity, 0), lots: lotsForItem };
         })
       })),
-      recommendedLots: dbLots.map((stock) => ({
-        id: stock.reagentLotId,
-        allergenCode: stock.reagentLot.allergen.code,
-        allergenName: stock.reagentLot.allergen.name,
-        lotNo: stock.reagentLot.lotNo,
-        expirationDate: stock.reagentLot.expirationDate.toISOString().slice(0, 10),
-        currentQuantity: stock.quantity,
-        status: statusFromDbLot({
-          quantity: stock.quantity,
-          expirationDate: stock.reagentLot.expirationDate
-        }),
-        source: "database"
-      })),
       shipmentHistory: dbShipments.map((shipment) => ({
         id: shipment.id,
         orderNo: shipment.order.orderNo,
         clientName: shipment.order.client.name,
         shippedAt: koreaDateKey(shipment.shippedAt),
         itemSummary: shipment.items
-          .map((item) => `${item.reagentLot.allergen.code} ${item.quantity}`)
+          .map((item) => `${item.reagentLot.allergen.code} · ${item.reagentLot.lotNo} · ${warehouseNames.get(item.warehouse) ?? item.warehouse} ${item.quantity}`)
           .join(", "),
-        itemDetails: shipment.items.map((item) => ({ code: item.reagentLot.allergen.code, quantity: item.quantity })),
+        itemDetails: shipment.items.map((item) => ({
+          code: `${item.reagentLot.allergen.code} · ${item.reagentLot.lotNo} · ${warehouseNames.get(item.warehouse) ?? item.warehouse}`,
+          quantity: item.quantity
+        })),
+        memo: shipment.memo ?? "-",
         status: mapShipmentFulfillmentStatus(shipment.status, shipment.fulfillmentStatus),
-        canCancel: shipment.status === "SHIPPED",
+        canCancel: shipment.status === "SHIPPED" && shipment.shortageReorder?.status !== "SHIPPED",
+        cancellationBlockedReason: shipment.status === "SHIPPED" && shipment.shortageReorder?.status === "SHIPPED"
+          ? "부족분 출고 취소 후 가능"
+          : undefined,
         source: "database"
       }))
     };
   } catch (error) {
     return handleDataSourceError("shipments", error, () => { const orderData=paginateRows(sampleShipmentOrders().filter(() => orderOrigin === "MANUAL"),orderPage); const historyData=paginateRows<ShipmentHistoryRow>([],historyPage); return ({
       orders: orderData.rows, orderMeta:orderData,
-      recommendedLots: sampleRecommendedLots(),
       shipmentHistory: historyData.rows, historyMeta:historyData
     });});
   }
