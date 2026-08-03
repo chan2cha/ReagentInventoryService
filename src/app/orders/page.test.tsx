@@ -5,12 +5,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireUser: vi.fn(),
   getOrderRows: vi.fn(),
-  getFlashMessage: vi.fn()
+  getFlashMessage: vi.fn(),
+  getOrderFormData: vi.fn()
 }));
 
 vi.mock("@/lib/auth", () => ({ requireUser: mocks.requireUser }));
 vi.mock("@/lib/flash-message", () => ({ getFlashMessage: mocks.getFlashMessage }));
 vi.mock("./actions", () => ({ cancelOrder: "/orders/cancel" }));
+vi.mock("./new/order-form-data", () => ({ getOrderFormData: mocks.getOrderFormData }));
+vi.mock("./order-management-dialog", () => ({
+  OrderManagementDialog: () => <button>수정</button>
+}));
 vi.mock("./order-data", () => ({
   formatDate: (value: string) => value,
   getOrderRows: mocks.getOrderRows,
@@ -48,6 +53,7 @@ describe("OrdersPage image attachment", () => {
     vi.clearAllMocks();
     mocks.requireUser.mockResolvedValue({ role: "VIEWER" });
     mocks.getFlashMessage.mockResolvedValue(null);
+    mocks.getOrderFormData.mockResolvedValue({ clients: [], allergens: [] });
     mocks.getOrderRows.mockResolvedValue({
       page: 1,
       total: 1,
@@ -55,15 +61,19 @@ describe("OrdersPage image attachment", () => {
       rows: [{
         id: "order-1",
         orderNo: "ORD-20260721-001",
+        clientId: "client-1",
         clientName: "테스트 병원",
         clientManager: "김담당",
         orderDate: "2026-07-21",
         items: "R-001 2",
         itemDetails: [{ code: "R-001", quantity: 2 }],
+        editableItems: [{ allergenId: "allergen-1", quantity: 2 }],
         memo: "이미지 주문",
         image: { fileName: "order.png", byteSize: 2048 },
         origin: "신규주문",
         status: "접수",
+        canEdit: true,
+        canEditFully: true,
         canCancel: true,
         source: "database"
       }]

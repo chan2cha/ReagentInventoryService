@@ -1,7 +1,7 @@
 import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
-import { SubmitButton } from "../submit-button";
-import { cancelOrder } from "./actions";
 import { formatDate, getOrderRows, orderSourceLabel } from "./order-data";
+import { getOrderFormData } from "./new/order-form-data";
+import { OrderManagementDialog } from "./order-management-dialog";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/access";
 import { parsePage } from "@/lib/pagination"; import { Pagination } from "../pagination";
@@ -39,10 +39,11 @@ export default async function OrdersPage({
   const dateError = orderDateError(fromValue, toValue);
   const from = dateError ? "" : fromValue;
   const to = dateError ? "" : toValue;
-  const [user, data, flash] = await Promise.all([
+  const [user, data, flash, editOptions] = await Promise.all([
     requireUser(),
     getOrderRows(parsePage(params?.page), params?.q?.trim(), from, to),
-    getFlashMessage()
+    getFlashMessage(),
+    getOrderFormData()
   ]);
   const orderRows = data.rows;
   const canWrite = can(user.role, "ORDER_WRITE");
@@ -127,6 +128,7 @@ export default async function OrdersPage({
                 <td>
                   {order.image ? (
                     <span className="stacked">
+                      <small>{order.image.fileName} · {Math.ceil(order.image.byteSize / 1024)} KB</small>
                       <a
                         aria-label={`${order.orderNo} 첨부 이미지 보기`}
                         className="table-action"
@@ -140,14 +142,12 @@ export default async function OrdersPage({
                   ) : "-"}
                 </td>
                 <td><StatusBadge status={order.status} /></td>
-                {canWrite ? <td>{order.canCancel && order.source === "database" ? (
-                  <form action={cancelOrder} className="inline-cancel-form">
-                    <input name="orderId" type="hidden" value={order.id} />
-                    <input aria-label="주문 취소 사유" name="reason" placeholder="취소 사유" required />
-                    <SubmitButton className="table-action danger" confirmMessage={`${order.orderNo} 주문을 취소하시겠습니까? 취소 후에는 출고 대기 목록에서 제외됩니다.`} pendingLabel="취소 중...">
-                      주문 취소
-                    </SubmitButton>
-                  </form>
+                {canWrite ? <td>{order.canEdit && order.source === "database" ? (
+                  <OrderManagementDialog
+                    allergens={editOptions.allergens}
+                    clients={editOptions.clients}
+                    order={order}
+                  />
                 ) : null}</td> : null}
               </tr>
             ))}

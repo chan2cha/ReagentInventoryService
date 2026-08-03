@@ -78,7 +78,6 @@ export async function parseOrderImageUpload(
   value: FormDataEntryValue | null
 ): Promise<OrderImageUpload | null> {
 
-  console.log("parseOrderImageUpload", value);
   if (value === null || value === "") {
     return null;
   }
@@ -118,7 +117,6 @@ export async function parseOrderImageUpload(
 export async function parseOrderImageUploads(
   values: FormDataEntryValue[]
 ): Promise<OrderImageUpload | null> {
-  console.log("parseOrderImageUploads", values);
   const populated = values.filter((value) => (
     typeof value === "string" || value.size !== 0
   ));

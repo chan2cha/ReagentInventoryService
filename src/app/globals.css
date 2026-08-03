@@ -975,6 +975,20 @@ a {
   align-items: start;
 }
 
+.order-image-selection > .order-image-existing-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.order-image-existing-actions a {
+  color: var(--primary-strong);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 4px;
+}
+
 .allergen-toolbar { align-items:center; justify-content:space-between; }
 .allergen-toolbar .table-search { margin-bottom:0; }
 .allergen-page-body { display:grid; gap:12px; }
@@ -993,6 +1007,33 @@ a {
 .client-name small, .client-contact small { color:var(--muted); font-size:12px; }
 .client-memo { color:#536174; max-width:300px; }
 .client-edit-dialog, .client-create-dialog { max-width:520px; }
+
+.registration-dialog.order-management-dialog { max-width: 820px; }
+.registration-dialog.shipment-management-dialog { max-width: 620px; }
+.management-dialog-body { max-height: calc(100vh - 126px); overflow-y: auto; }
+.management-dialog-body .entry-form { max-height: none; overflow: visible; }
+.management-dialog-note { color: var(--muted); font-size: 12px; margin: 0; }
+.management-delete-form {
+  align-items: end;
+  background: var(--danger-bg);
+  border-top: 1px solid #fecaca;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 16px 22px;
+}
+.management-delete-form label { color: var(--danger); display: grid; font-size: 13px; font-weight: 800; gap: 7px; }
+.management-delete-form input {
+  background: #fff;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  min-height: 42px;
+  padding: 9px 11px;
+  width: 100%;
+}
+.management-delete-blocked { background: var(--warn-bg); color: var(--warn); font-weight: 800; margin: 0; padding: 16px 22px; }
+.management-readonly-field { background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 10px; padding: 14px; }
+.management-readonly-field > small { color: var(--muted); }
 
 .warehouse-toolbar { justify-content:flex-end; }
 .warehouse-code { background:#eef5fd; border:1px solid #d3e3f2; border-radius:4px; color:#1d5f9f; display:inline-block; font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace); font-size:12px; font-weight:800; padding:4px 7px; white-space:nowrap; }

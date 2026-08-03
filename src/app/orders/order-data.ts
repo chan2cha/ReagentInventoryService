@@ -18,11 +18,13 @@ import { buildOrderWhere } from "@/domain/export-filters";
 export type OrderRow = {
   id: string;
   orderNo: string;
+  clientId: string;
   clientName: string;
   clientManager: string;
   orderDate: string;
   items: string;
   itemDetails: ItemQuantity[];
+  editableItems: Array<{ allergenId: string; quantity: number }>;
   memo: string;
   image: {
     fileName: string;
@@ -30,6 +32,8 @@ export type OrderRow = {
   } | null;
   origin: OrderOriginLabel;
   status: OrderStatus;
+  canEdit: boolean;
+  canEditFully: boolean;
   canCancel: boolean;
   source: "database" | "sample";
 };
@@ -41,15 +45,19 @@ function sampleOrderRows(): OrderRow[] {
     return {
       id: String(order.id),
       orderNo: order.orderNo,
+      clientId: String(order.clientId),
       clientName: client?.name ?? "-",
       clientManager: client?.manager ?? "-",
       orderDate: order.orderDate,
       items: orderItemSummary(order),
       itemDetails: order.items.map((item) => ({ code: findAllergen(item.allergenId)?.code ?? "-", quantity: item.quantity })),
+      editableItems: order.items.map((item) => ({ allergenId: String(item.allergenId), quantity: item.quantity })),
       memo: order.memo || "-",
       image: null,
       origin: "신규주문",
       status: order.status,
+      canEdit: order.status !== "취소",
+      canEditFully: order.status === "접수" || order.status === "준비중",
       canCancel: order.status === "접수" || order.status === "준비중",
       source: "sample"
     };
@@ -118,6 +126,7 @@ export async function getOrderRows(
     return { ...meta, rows: dbOrders.map((order) => ({
       id: order.id,
       orderNo: order.orderNo,
+      clientId: order.clientId,
       clientName: order.client.name,
       clientManager: order.client.managerName ?? "-",
       orderDate: koreaDateKey(order.createdAt),
@@ -125,10 +134,13 @@ export async function getOrderRows(
         .map((item) => `${item.allergen.code} ${item.quantity}`)
         .join(", "),
       itemDetails: order.items.map((item) => ({ code: item.allergen.code, quantity: item.quantity })),
+      editableItems: order.items.map((item) => ({ allergenId: item.allergenId, quantity: item.quantity })),
       memo: order.memo || "-",
       image: order.image,
       origin: mapOrderOrigin(order.origin),
       status: mapOrderStatus(order.status),
+      canEdit: order.status !== "CANCELLED",
+      canEditFully: order.status === "RECEIVED" || order.status === "READY_TO_SHIP",
       canCancel: order.status === "RECEIVED" || order.status === "READY_TO_SHIP",
       source: "database"
     })) };

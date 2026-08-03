@@ -1,6 +1,4 @@
 import { AppShell, Panel, StatusBadge, Table } from "../reagent-ui";
-import { SubmitButton } from "../submit-button";
-import { cancelShipment } from "./actions";
 import { formatDate, getShipmentPageData, shipmentSourceLabel } from "./shipment-data";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/access";
@@ -13,6 +11,7 @@ import { ShipmentAllocationDialog } from "./shipment-allocation-dialog";
 import { ItemQuantitySummary } from "../item-quantity-summary";
 import { ProgressLink } from "../progress-link";
 import type { ShipmentOrderOrigin } from "./shipment-data";
+import { ShipmentManagementDialog } from "./shipment-management-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +46,7 @@ export default async function ShipmentsPage({
       <Panel title="출고·복구 안내" note="처리 전 확인 사항">
         <OperationGuide items={[
           { title: "재고 배정 기준", description: "활성 창고의 제조번호별 재고를 표시하고 유통기한이 빠른 순서로 기본 배정합니다.", icon: guideIcons.Clock3 },
-          { title: "출고 취소 결과", description: "재고와 주문을 복구합니다. 단, 부족분 재주문이 출고된 경우에는 해당 출고를 먼저 취소해야 합니다.", icon: guideIcons.PackageCheck, tone: "success" },
+          { title: "출고 삭제 결과", description: "삭제 시 재고와 주문을 복구합니다. 단, 부족분 재주문이 출고된 경우에는 해당 출고를 먼저 삭제해야 합니다.", icon: guideIcons.PackageCheck, tone: "success" },
           { title: "이력 기록", description: "복구 내역은 입출고 이력에 되돌림 기록으로 남습니다.", icon: guideIcons.ShieldCheck }
         ]} />
       </Panel>
@@ -120,19 +119,17 @@ export default async function ShipmentsPage({
                   <td>{shipment.orderNo}</td>
                   <td>{shipment.clientName}</td>
                   <td>{formatDate(shipment.shippedAt)}</td>
-                  <td><ItemQuantitySummary items={shipment.itemDetails} /></td>
+                  <td>
+                    <ItemQuantitySummary
+                      dialogSubtitle={shipment.orderNo}
+                      items={shipment.itemDetails}
+                      summarizeAt={3}
+                    />
+                  </td>
                   <td>{shipment.memo}</td>
                   <td><StatusBadge status={shipment.status} /></td>
-                  {canWrite ? <td>{shipment.canCancel && shipment.source === "database" ? (
-                    <form action={cancelShipment} className="inline-cancel-form">
-                      <input name="shipmentId" type="hidden" value={shipment.id} />
-                      <input aria-label="출고 취소 사유" name="reason" placeholder="취소 사유" required />
-                      <SubmitButton className="table-action danger" confirmMessage={`${shipment.orderNo} 출고를 취소하시겠습니까? 차감된 재고가 복구되고 주문은 준비중으로 돌아갑니다.`} pendingLabel="복구 중...">
-                        출고 취소
-                      </SubmitButton>
-                    </form>
-                  ) : shipment.cancellationBlockedReason ? (
-                    <small className="shipment-cancellation-blocked">{shipment.cancellationBlockedReason}</small>
+                  {canWrite ? <td>{shipment.canEdit && shipment.source === "database" ? (
+                    <ShipmentManagementDialog shipment={shipment} />
                   ) : null}</td> : null}
                 </tr>
               ))}

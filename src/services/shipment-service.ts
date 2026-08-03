@@ -1,7 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
+import type { OrderImageUpload } from "../domain/order-image";
 import { addDateOnlyDays, dateOnlyUtc, koreaDateKey } from "../lib/date";
 import { RetryableTransactionError, runSerializableTransaction } from "../lib/transaction";
 import { isOrderNumberConflict, nextOrderNo } from "./order-create-service";
+import { applyOrderImageMutation } from "./order-service";
 
 type RequestedItem = {
   allergenId: string;
@@ -23,6 +25,48 @@ export type ShipmentAllocationInput = {
   warehouse: string;
   quantity: number;
 };
+
+export async function updateShipmentMemo(
+  db: PrismaClient,
+  shipmentId: string,
+  actorId: string,
+  memo: string | null,
+  image?: OrderImageUpload | null
+) {
+  return runSerializableTransaction(db, async (tx) => {
+    const shipment = await tx.shipment.findUnique({
+      where: { id: shipmentId },
+      include: { order: { select: { orderNo: true } } }
+    });
+
+    if (!shipment) throw new Error("SHIPMENT_NOT_FOUND");
+    if (shipment.purpose !== "ORDER") throw new Error("SHIPMENT_NOT_EDITABLE");
+    if (shipment.status === "CANCELLED") throw new Error("SHIPMENT_ALREADY_CANCELLED");
+
+    const claim = await tx.shipment.updateMany({
+      where: { id: shipment.id, status: "SHIPPED", purpose: "ORDER" },
+      data: { memo }
+    });
+    if (claim.count !== 1) throw new RetryableTransactionError();
+
+    await applyOrderImageMutation(tx, {
+      id: shipment.orderId,
+      orderNo: shipment.order.orderNo
+    }, actorId, image);
+
+    await tx.auditLog.create({
+      data: {
+        action: "SHIPMENT_UPDATE",
+        entityType: "SHIPMENT",
+        entityId: shipment.id,
+        description: `${shipment.order.orderNo} 출고 메모 수정`,
+        actorId
+      }
+    });
+
+    return { id: shipment.id };
+  });
+}
 
 function allocationKey(lotId: string, warehouse: string) {
   return `${lotId}\u0000${warehouse}`;

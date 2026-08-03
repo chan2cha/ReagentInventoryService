@@ -43,13 +43,17 @@ export type ShipmentAllocationItemRow = {
 
 export type ShipmentHistoryRow = {
   id: string;
+  orderId: string;
   orderNo: string;
   clientName: string;
   shippedAt: string;
   itemSummary: string;
   itemDetails: ItemQuantity[];
   memo: string;
+  editableMemo: string;
+  orderImage: { fileName: string; byteSize: number } | null;
   status: ShipmentFulfillmentLabel;
+  canEdit: boolean;
   canCancel: boolean;
   cancellationBlockedReason?: string;
   source: "database" | "sample";
@@ -163,7 +167,10 @@ export async function getShipmentPageData(
         include: {
           order: {
             include: {
-              client: true
+              client: true,
+              image: {
+                select: { fileName: true, byteSize: true }
+              }
             }
           },
           items: {
@@ -241,6 +248,7 @@ export async function getShipmentPageData(
       })),
       shipmentHistory: dbShipments.map((shipment) => ({
         id: shipment.id,
+        orderId: shipment.orderId,
         orderNo: shipment.order.orderNo,
         clientName: shipment.order.client.name,
         shippedAt: koreaDateKey(shipment.shippedAt),
@@ -252,7 +260,10 @@ export async function getShipmentPageData(
           quantity: item.quantity
         })),
         memo: shipment.memo ?? "-",
+        editableMemo: shipment.memo ?? "",
+        orderImage: shipment.order.image,
         status: mapShipmentFulfillmentStatus(shipment.status, shipment.fulfillmentStatus),
+        canEdit: shipment.status === "SHIPPED",
         canCancel: shipment.status === "SHIPPED" && shipment.shortageReorder?.status !== "SHIPPED",
         cancellationBlockedReason: shipment.status === "SHIPPED" && shipment.shortageReorder?.status === "SHIPPED"
           ? "부족분 출고 취소 후 가능"

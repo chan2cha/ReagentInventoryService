@@ -8,7 +8,8 @@ import { redirectWithFlash } from "@/lib/flash-message";
 import { formString } from "@/lib/form-data";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { processShipment, reverseShipment, type ShipmentAllocationInput } from "@/services/shipment-service";
+import { processShipment, reverseShipment, updateShipmentMemo, type ShipmentAllocationInput } from "@/services/shipment-service";
+import { parseOrderImageUploads } from "@/domain/order-image";
 
 async function fail(message: string): Promise<never> {
   return redirectWithFlash("/shipments", "error", message);
@@ -16,6 +17,40 @@ async function fail(message: string): Promise<never> {
 
 export async function shipOrder(formData: FormData) {
   return confirmShipment(formData);
+}
+
+export async function updateShipment(formData: FormData) {
+  const shipmentId = formString(formData, "shipmentId");
+  const memo = formString(formData, "memo");
+
+  if (!shipmentId) await fail("수정할 출고 건을 찾을 수 없습니다.");
+  if (memo.length > 500) await fail("출고 메모는 500자 이하로 입력하세요.");
+
+  try {
+    const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
+    const removeImage = formString(formData, "removeImage") === "1";
+    const uploadedImage = await parseOrderImageUploads(formData.getAll("image"));
+    if (removeImage && uploadedImage) throw new Error("ORDER_IMAGE_ACTION_CONFLICT");
+    const image = uploadedImage ?? (removeImage ? null : undefined);
+    await updateShipmentMemo(prisma, shipmentId, user.id, memo || null, image);
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof Error && error.message === "ORDER_IMAGE_SIZE_INVALID") await fail("주문 이미지는 3MB 이하의 파일만 첨부할 수 있습니다.");
+    if (error instanceof Error && error.message === "ORDER_IMAGE_NAME_INVALID") await fail("주문 이미지 파일명이 올바르지 않거나 너무 깁니다.");
+    if (error instanceof Error && error.message === "ORDER_IMAGE_ACTION_CONFLICT") await fail("이미지 교체와 삭제를 동시에 요청할 수 없습니다.");
+    if (error instanceof Error && error.message.startsWith("ORDER_IMAGE_")) await fail("실제 JPG, PNG 또는 WebP 이미지 파일만 첨부할 수 있습니다.");
+    if (error instanceof Error && error.message === "FORBIDDEN") await fail("출고 수정 권한이 없습니다.");
+    if (error instanceof Error && error.message === "SHIPMENT_NOT_FOUND") await fail("출고 건을 찾을 수 없습니다.");
+    if (error instanceof Error && error.message === "SHIPMENT_ALREADY_CANCELLED") await fail("삭제된 출고 건은 수정할 수 없습니다.");
+    if (error instanceof Error && error.message === "SHIPMENT_NOT_EDITABLE") await fail("수정할 수 없는 출고 건입니다.");
+    if (error instanceof Error && error.message === "TRANSACTION_CONFLICT") await fail("다른 재고 처리와 겹쳤습니다. 잠시 후 다시 시도하세요.");
+    await fail("출고 수정 중 오류가 발생했습니다. 연결 상태를 확인하세요.");
+  }
+
+  revalidatePath("/");
+  revalidatePath("/movements");
+  revalidatePath("/shipments");
+  await redirectWithFlash("/shipments", "success", "출고 정보가 수정되었습니다.");
 }
 
 export async function confirmShipment(formData: FormData) {
