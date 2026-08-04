@@ -21,7 +21,6 @@ import { logout } from "@/app/logout/actions";
 import { requireUser } from "@/lib/auth";
 import { can, type Capability } from "@/lib/access";
 import { formatKoreaDateTime } from "@/lib/date";
-import companyLogo from "@/lib/logo.png.png";
 import type { StockMovementLabel } from "@/domain/stock-movement-presentation";
 import { ProgressLink } from "./progress-link";
 import { formatSidebarBadge, getSidebarData } from "./sidebar-data";
@@ -120,7 +119,7 @@ export async function AppShell({ active, title, description, action, actionHref,
     <div className="app-shell">
       <aside className="app-sidebar">
         <ProgressLink className="brand-block" href="/">
-          <Image alt="신영로파마" height={48} priority src={companyLogo} width={177} />
+          <Image alt="신영로파마" height={48} priority src="/logo.png" width={177} />
           <span>
             <strong>시약 재고 관리 시스템</strong>
             <small>SHINYOUNG Lofarma</small>

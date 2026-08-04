@@ -4,8 +4,6 @@ import { SubmitButton } from "@/app/submit-button";
 import { FlashMessage } from "@/app/flash-message";
 import { getCurrentUser } from "@/lib/auth";
 import { getFlashMessage } from "@/lib/flash-message";
-import loginBackground from "@/lib/login_container_bg.jpg";
-import companyLogo from "@/lib/logo.png.png";
 import { login } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +20,7 @@ export default async function LoginPage() {
 
   return (
     <main className="login-page">
+      {/* public 폴더의 파일은 import하지 않고 루트 기준 URL로 참조한다. */}
       <Image
         alt=""
         aria-hidden
@@ -29,14 +28,14 @@ export default async function LoginPage() {
         fill
         priority
         sizes="100vw"
-        src={loginBackground}
+        src="/login_container_bg.jpg"
       />
       <header className="login-brand-bar">
         <Image
           alt="신영로파마"
           height={56}
           priority
-          src={companyLogo}
+          src="/logo.png"
           width={206}
         />
       </header>

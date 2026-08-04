@@ -6,6 +6,13 @@ coverage
 .env
 .env.local
 .env.*.local
+.env.nas
+.env.supabase-migration
+.env.db
 *.log
 *.tsbuildinfo
 prisma/dev.db
+deploy/nas/data/
+deploy/nas/backups/
+data/
+backups/

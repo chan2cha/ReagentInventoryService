@@ -213,6 +213,7 @@ npm run test:integration
 | <code>docs/09_current_implementation_status.md</code> | 작성 시점의 구현 화면·워크플로, 환경, DB·시드, 검증 결과와 알려진 문제를 기록합니다. |
 | <code>docs/10_remaining_work.md</code> | 남은 작업의 우선순위, 완료된 개선과 다음 구현 순서를 추적합니다. |
 | <code>docs/11_database_migrations.md</code> | Prisma 기준선, 사전 점검, 배포·복구, 개별 마이그레이션과 신규 환경 생성 절차를 설명합니다. |
+| <code>docs/12_synology_empty_database_test.md</code> | Synology Container Manager에 빈 PostgreSQL을 만들고 Windows에서 Prisma 마이그레이션을 검증하는 절차입니다. |
 
 현황 문서(<code>09</code>, <code>10</code>)는 특정 시점의 기록이므로 기능 변경 시 함께 갱신해야 합니다.
 
@@ -462,8 +463,6 @@ UI와 데이터 영속화 실행에서 분리한 입력 정규화와 핵심 업�
 | <code>src/lib/flash-message.test.ts</code> | 플래시 쿠키 옵션, 정상·손상 값, 삭제와 리다이렉트를 검증합니다. |
 | <code>src/lib/flash-message.ts</code> | 성공·오류 메시지를 짧은 httpOnly 쿠키로 저장·조회·삭제하고 리다이렉트합니다. |
 | <code>src/lib/form-data.ts</code> | FormData의 단일·복수 문자열을 안전하게 읽고 양끝 공백을 제거합니다. |
-| <code>src/lib/login_container_bg.jpg</code> | 로그인 화면의 알약 용기 배경 이미지입니다. |
-| <code>src/lib/logo.png.png</code> | 로그인과 앱 브랜딩에 사용하는 회사 로고 이미지입니다. |
 | <code>src/lib/pagination.test.ts</code> | 잘못된 페이지 기본값, 마지막 페이지 보정과 20건 분할을 검증합니다. |
 | <code>src/lib/pagination.ts</code> | 20건 기준 페이지 번호, 메타데이터와 배열 페이지 분할을 제공합니다. |
 | <code>src/lib/password.test.ts</code> | 정상·오류 비밀번호, 손상 해시와 미등록 계정의 더미 검증 경로를 확인합니다. |

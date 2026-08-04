@@ -11,11 +11,21 @@ export function runtimeDatabaseUrl(url: string | undefined) {
   }
 
   // Supabase Transaction Pooler 사용 시 추가
-  if (!url.includes("pgbouncer=")) {
-    return `${url}${url.includes("?") ? "&" : "?"}pgbouncer=true`;
+  // Supabase transaction pooler URL에 빠진 안전 기본값만 추가한다.
+  // 명시된 운영 값은 덮어쓰지 않으며 self-hosted PostgreSQL(:5432)은 변경하지 않는다.
+  const defaults = [
+    ["pgbouncer", "true"],
+    ["connection_limit", "3"],
+    ["pool_timeout", "30"],
+  ] as const;
+  const missing = defaults.filter(([key]) => !url.includes(`${key}=`));
+
+  if (missing.length === 0) {
+    return url;
   }
 
-  return url;
+  const query = missing.map(([key, value]) => `${key}=${value}`).join("&");
+  return `${url}${url.includes("?") ? "&" : "?"}${query}`;
 }
 
 function createPrismaClient() {
