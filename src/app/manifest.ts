@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "신영로파마 시약 재고 관리",
+    name: "시약 재고 관리",
     short_name: "시약 재고 관리",
     description: "신영로파마 사내 시약 재고, 주문, 출고 관리 시스템",
     start_url: "/",
