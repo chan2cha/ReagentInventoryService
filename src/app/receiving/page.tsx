@@ -1,6 +1,6 @@
 import { AppShell, Panel } from "../reagent-ui";
 import { SubmitButton } from "../submit-button";
-import { createReceivingLot } from "./actions";
+import { createReceivingLot, importReceivingLots } from "./actions";
 import { getReceivingAllergens, receivingSourceLabel } from "./receiving-data";
 import { koreaDateKey } from "@/lib/date";
 import { requirePageRole } from "@/lib/auth";
@@ -85,7 +85,30 @@ export default async function ReceivingPage() {
             </div>
           </form>
         </Panel>
-
+        <Panel title="엑셀 일괄 등록" note="최대 200건">
+          <form action={importReceivingLots} className="entry-form compact-entry-form">
+            <p className="wide">
+              템플릿에서 시약명과 입고창고명을 선택하고 입고 정보를 입력해 업로드하세요. 오류가 있는 경우 전체 내역이 저장되지 않습니다.
+            </p>
+            <div className="form-actions wide receiving-import-actions">
+              <a className="secondary-button" href="/api/receiving/template">템플릿 다운로드</a>
+            </div>
+            <label className="wide">
+              입고 엑셀 파일 (.xlsx, 3MB 이하)
+              <input accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={!canSubmit} name="file" required type="file" />
+            </label>
+            <div className="form-actions wide">
+              <SubmitButton
+                className="primary-button"
+                confirmMessage="엑셀의 모든 입고 내역을 등록할까요?"
+                disabled={!canSubmit}
+                pendingLabel="검증 및 등록 중..."
+              >
+                엑셀 일괄 등록
+              </SubmitButton>
+            </div>
+          </form>
+        </Panel>
       </div>
     </AppShell>
   );

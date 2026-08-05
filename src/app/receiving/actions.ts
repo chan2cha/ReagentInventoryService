@@ -9,6 +9,11 @@ import { redirectWithFlash } from "@/lib/flash-message";
 import { formString } from "@/lib/form-data";
 import { prisma } from "@/lib/prisma";
 import { isActiveWarehouse } from "@/lib/warehouse-data";
+import {
+  parseReceivingWorkbook,
+  RECEIVING_IMPORT_FILE_LIMIT,
+  ReceivingImportError
+} from "@/domain/receiving-import";
 
 function formDate(value: string) {
   return new Date(`${value}T00:00:00.000Z`);
@@ -144,4 +149,138 @@ export async function createReceivingLot(formData: FormData) {
   revalidatePath("/shipments");
   revalidatePath("/replacements");
   redirect("/lots");
+}
+
+export async function importReceivingLots(formData: FormData) {
+  const user = await requireRole(["ADMIN", "SHIPMENT_MANAGER"]);
+  const file = formData.get("file");
+
+  if (typeof file === "string" || file === null || file.size === 0) {
+    return fail("등록할 엑셀 파일을 선택하세요.");
+  }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) {
+    await fail(".xlsx 형식의 엑셀 파일만 등록할 수 있습니다.");
+  }
+  if (file.size > RECEIVING_IMPORT_FILE_LIMIT) {
+    await fail("엑셀 파일은 3MB 이하만 등록할 수 있습니다.");
+  }
+
+  try {
+    const rows = await parseReceivingWorkbook(await file.arrayBuffer());
+    const allergenNames = [...new Set(rows.map((row) => row.allergenName))];
+    const warehouseNames = [...new Set(rows.map((row) => row.warehouseName))];
+
+    await prisma.$transaction(async (tx) => {
+      const [allergens, warehouses] = await Promise.all([
+        tx.allergen.findMany({
+          where: { name: { in: allergenNames }, isActive: true },
+          select: { id: true, name: true }
+        }),
+        tx.warehouse.findMany({
+          where: { name: { in: warehouseNames }, isActive: true },
+          select: { code: true, name: true }
+        })
+      ]);
+      const allergenByName = new Map<string, string>();
+      const duplicateAllergenNames = new Set<string>();
+      for (const allergen of allergens) {
+        if (allergenByName.has(allergen.name)) duplicateAllergenNames.add(allergen.name);
+        allergenByName.set(allergen.name, allergen.id);
+      }
+      const warehouseCodeByName = new Map(warehouses.map((warehouse) => [warehouse.name, warehouse.code]));
+      const keys = new Map<string, number>();
+
+      for (const row of rows) {
+        if (duplicateAllergenNames.has(row.allergenName)) {
+          throw new ReceivingImportError(`${row.rowNumber}행 시약명: 같은 이름의 시약이 여러 개입니다. 시약 정보를 정리한 후 다시 시도하세요.`);
+        }
+        const allergenId = allergenByName.get(row.allergenName);
+        if (!allergenId) {
+          throw new ReceivingImportError(`${row.rowNumber}행 시약명: 사용 중인 시약을 찾을 수 없습니다.`);
+        }
+        if (!warehouseCodeByName.has(row.warehouseName)) {
+          throw new ReceivingImportError(`${row.rowNumber}행 입고창고명: 사용 중인 창고를 찾을 수 없습니다.`);
+        }
+        const key = `${allergenId}\u0000${row.lotNo}\u0000${row.expirationDate.toISOString()}`;
+        const firstRow = keys.get(key);
+        if (firstRow) {
+          throw new ReceivingImportError(`${row.rowNumber}행: ${firstRow}행과 동일한 입고분입니다.`);
+        }
+        keys.set(key, row.rowNumber);
+      }
+
+      const existingLots = await tx.reagentLot.findMany({
+        where: {
+          OR: rows.map((row) => ({
+            allergenId: allergenByName.get(row.allergenName)!,
+            lotNo: row.lotNo,
+            expirationDate: row.expirationDate
+          }))
+        },
+        select: { allergenId: true, lotNo: true, expirationDate: true }
+      });
+      if (existingLots.length > 0) {
+        const duplicate = existingLots[0];
+        const row = rows.find((candidate) =>
+          allergenByName.get(candidate.allergenName) === duplicate.allergenId &&
+          candidate.lotNo === duplicate.lotNo &&
+          candidate.expirationDate.getTime() === duplicate.expirationDate.getTime()
+        );
+        throw new ReceivingImportError(`${row?.rowNumber ?? "?"}행: 이미 등록된 입고분입니다.`);
+      }
+
+      for (const row of rows) {
+        const lot = await tx.reagentLot.create({
+          data: {
+            allergenId: allergenByName.get(row.allergenName)!,
+            lotNo: row.lotNo,
+            receivedDate: row.receivedDate,
+            expirationDate: row.expirationDate,
+            initialQuantity: row.quantity,
+            memo: row.memo || null,
+            isActive: true
+          }
+        });
+        await tx.warehouseStock.create({
+          data: { reagentLotId: lot.id, warehouse: warehouseCodeByName.get(row.warehouseName)!, quantity: row.quantity }
+        });
+        await tx.stockMovement.create({
+          data: {
+            reagentLotId: lot.id,
+            type: "IN",
+            quantity: row.quantity,
+            warehouse: warehouseCodeByName.get(row.warehouseName)!,
+            destinationWarehouse: null,
+            reason: row.memo || "엑셀 일괄 입고 등록",
+            refType: "RECEIVING_IMPORT",
+            refId: lot.id,
+            createdBy: user.id
+          }
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          action: "RECEIVING_IMPORT",
+          entityType: "RECEIVING",
+          description: `입고 엑셀 일괄 등록 ${rows.length}건 (${file.name.slice(0, 120)})`,
+          actorId: user.id
+        }
+      });
+    }, { isolationLevel: "Serializable", maxWait: 5_000, timeout: 20_000 });
+
+    revalidatePath("/lots");
+    revalidatePath("/movements");
+    revalidatePath("/receiving");
+    revalidatePath("/shipments");
+    revalidatePath("/replacements");
+    return redirectWithFlash("/receiving", "success", `${rows.length}건의 입고를 일괄 등록했습니다.`);
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof ReceivingImportError) await fail(error.message);
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+      await fail("등록 중 다른 요청과 중복된 입고분이 생겼습니다. 파일을 다시 확인하세요.");
+    }
+    await fail("엑셀 입고 등록 중 오류가 발생했습니다. 파일과 연결 상태를 확인하세요.");
+  }
 }

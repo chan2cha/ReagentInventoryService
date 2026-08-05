@@ -14,7 +14,8 @@ const actionLabels: Record<string, string> = {
   INVENTORY_EXPORT: "재고현황 엑셀 생성",
   MOVEMENT_EXPORT: "입출고이력 엑셀 생성",
   ORDER_EXPORT: "주문내역 엑셀 생성",
-  COMBINED_EXPORT: "업무자료 통합 엑셀 생성"
+  COMBINED_EXPORT: "업무자료 통합 엑셀 생성",
+  RECEIVING_IMPORT: "입고 엑셀 일괄 등록"
 };
 
 export async function getAuditRows(requestedPage: number, q = "") {
