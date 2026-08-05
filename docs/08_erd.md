@@ -60,8 +60,17 @@ erDiagram
 
   WarehouseStock {
     string reagentLotId PK,FK
-    Warehouse warehouse PK
+    string warehouse PK
     int quantity
+    datetime createdAt
+    datetime updatedAt
+  }
+
+  Warehouse {
+    string id PK
+    string code UK
+    string name UK
+    boolean isActive
     datetime createdAt
     datetime updatedAt
   }
@@ -69,9 +78,9 @@ erDiagram
   Client {
     string id PK
     string name
+    string region
     string managerName
-    string phone
-    string address
+    string deliveryDepartment
     string memo
     boolean isActive
     datetime createdAt
@@ -129,8 +138,8 @@ erDiagram
     string reagentLotId FK
     StockMovementType type
     int quantity
-    Warehouse warehouse
-    Warehouse destinationWarehouse
+    string warehouse
+    string destinationWarehouse
     string reason
     string refType
     string refId
@@ -168,6 +177,8 @@ erDiagram
   ReagentLot ||--o{ StockMovement : tracked_by
 ```
 
+`WarehouseStock.warehouse`, `ShipmentItem.warehouse`, and the movement warehouse fields store `Warehouse.code` values as text. The current database does not declare foreign keys for those historical code fields; application writes validate them against active warehouse master rows.
+
 ## Tables
 
 | Table | Purpose |
@@ -176,6 +187,7 @@ erDiagram
 | `Allergen` | Master data for allergen/reagent item codes. |
 | `ReagentLot` | Stable LOT identity, receipt, and expiration data. |
 | `WarehouseStock` | The authoritative mutable quantity for one LOT and warehouse. |
+| `Warehouse` | Administrator-maintained warehouse code, label, and active state. |
 | `Client` | Customer or hospital information. |
 | `Order` | Customer order header. |
 | `OrderImage` | Optional authenticated image attachment, one per order. |
@@ -238,7 +250,9 @@ erDiagram
 | `REVERSE` | Shipment cancellation / stock restoration |
 | `TRANSFER` | Warehouse-to-warehouse transfer with zero total inventory delta |
 
-### Warehouse
+### Default Warehouse Codes
+
+Warehouse codes are administrator-maintained master data rather than a database enum. A fresh database starts with these five rows:
 
 | Value | Meaning |
 |---|---|

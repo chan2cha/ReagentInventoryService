@@ -1,6 +1,6 @@
 # Database Migration Operations
 
-Last updated: 2026-07-12
+Last updated: 2026-08-05
 
 ## Standard Commands
 
@@ -56,6 +56,8 @@ Do not run `migrate resolve --applied` on a new empty database. A new database m
 ## P0 Inventory Invariant Migration
 
 Migration `20260712000000_enforce_inventory_invariants` adds database-level protections for inventory quantities, dates, duplicate order items, and duplicate active shipments. It also adds indexes for frequently traversed foreign keys.
+
+> This section is a historical preflight for a database where `20260712000000_enforce_inventory_invariants` is still pending. It intentionally references the then-existing `ReagentLot.currentQuantity` and `Allergen.minStock` columns. Do not run these queries against a database that has already applied the later warehouse cutover and `20260723160000_remove_allergen_min_stock`; use `npm run prisma:migrate:status` and the current-schema checks below instead.
 
 The migration runs its own preflight inside a transaction and fails without applying any change when legacy data violates a new invariant. Run these read-only queries separately before deployment so the affected records can be reviewed without waiting for the deployment to fail:
 
@@ -275,6 +277,41 @@ The migration initializes the policy to 60 notification days and 180 minimum del
 Migration `20260721170000_add_order_image` adds the optional one-to-one `OrderImage` table. It stores only JPEG, PNG, or WebP content up to 3 MiB and enforces filename length, MIME allowlisting, byte-size bounds, and equality between the declared size and PostgreSQL `octet_length(data)`. The unique `orderId` foreign key uses `ON DELETE CASCADE`; cancelling an order does not delete its row or image.
 
 This is an additive migration and needs no existing-order backfill. Deploy it with `npm run prisma:migrate:deploy` before starting the matching application artifact, then run `npm run prisma:generate`. The application serves bytes only through the authenticated `/api/orders/[orderId]/image` route and does not write uploads to the ephemeral deployment filesystem. This migration has been committed but has not been applied to an operational database in this workspace session.
+
+## Current Schema Tail
+
+After the order-image migration, the current source applies these forward migrations in order:
+
+- `20260721180000_update_client_delivery_fields`: replaces the retired client phone/address fields with region and delivery-department data.
+- `20260722100000_add_partial_shipment_reorders`: records partial fulfillment and links one shortage reorder to its source shipment.
+- `20260722113000_add_warehouse_master`: converts warehouse enum values to text and creates the administrator-maintained `Warehouse` master with five default rows.
+- `20260722120000_add_warehouse_active`: adds warehouse activation state.
+- `20260723133000_add_manual_defect_replacements`: distinguishes expiry and product-defect replacement origins and requires a defect reason.
+- `20260723160000_remove_allergen_min_stock`: removes the retired safety-stock column and CHECK constraint.
+- `20260729140000_add_shipment_item_warehouse`: records the warehouse used by each shipment item and backfills existing rows as `FINISHED_GOODS`.
+
+For a database at the current migration head, verify the active shape with read-only queries that reference only current columns:
+
+```sql
+SELECT migration_name, finished_at, rolled_back_at
+FROM "_prisma_migrations"
+ORDER BY started_at;
+
+SELECT COUNT(*) AS negative_warehouse_balances
+FROM "WarehouseStock"
+WHERE "quantity" < 0;
+
+SELECT COUNT(*) AS shipment_items_without_warehouse
+FROM "ShipmentItem"
+WHERE "warehouse" IS NULL OR btrim("warehouse") = '';
+
+SELECT COUNT(*) AS inventory_using_unknown_warehouse
+FROM "WarehouseStock" AS stock
+LEFT JOIN "Warehouse" AS warehouse ON warehouse."code" = stock."warehouse"
+WHERE warehouse."id" IS NULL;
+```
+
+The last three counts must be zero, and `npm run prisma:migrate:status` must report no pending or failed migration.
 
 ## Rollback and Recovery
 

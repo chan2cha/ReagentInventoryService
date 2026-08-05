@@ -8,8 +8,8 @@
 
 - 시약·거래처·사용자 기준정보 관리
 - 제조번호·유통기한·창고별 LOT 입고 및 재고 현황 조회
-- 완제품·검체·반품·부적합·폐기 5개 창고와 부분 수량 창고 이동
-- 시약별 안전재고, 품절, 유통기한 임박·만료 상태 표시
+- 완제품·검체·반품·부적합·폐기 기본 창고와 관리자 정의 창고, 부분 수량 창고 이동
+- 창고별 품절, 유통기한 임박·만료 상태 표시
 - 거래처·시약 검색 선택, 선택 이미지 첨부를 포함한 여러 품목 주문 등록·취소 및 상태 관리
 - FEFO 기반 LOT 추천·출고 및 출고 취소 시 재고 복구
 - 재고 추가·차감·폐기와 모든 입출고 이력 추적
@@ -18,6 +18,7 @@
 - 서명된 httpOnly 세션, 역할별 권한, 비밀번호 변경·세션 무효화
 - 관리자용 중요 작업 감사 로그
 - 한국 표준시(KST) 기준 업무 날짜와 페이지 단위 목록 조회
+- 로고 기반 바탕화면 아이콘과 독립 창을 제공하는 설치형 PWA
 
 ## 기술 구성
 
@@ -213,7 +214,7 @@ npm run test:integration
 | <code>docs/09_current_implementation_status.md</code> | 작성 시점의 구현 화면·워크플로, 환경, DB·시드, 검증 결과와 알려진 문제를 기록합니다. |
 | <code>docs/10_remaining_work.md</code> | 남은 작업의 우선순위, 완료된 개선과 다음 구현 순서를 추적합니다. |
 | <code>docs/11_database_migrations.md</code> | Prisma 기준선, 사전 점검, 배포·복구, 개별 마이그레이션과 신규 환경 생성 절차를 설명합니다. |
-| <code>docs/12_synology_empty_database_test.md</code> | Synology Container Manager에 빈 PostgreSQL을 만들고 Windows에서 Prisma 마이그레이션을 검증하는 절차입니다. |
+| <code>docs/12_synology_empty_database_test_updated.md</code> | Synology Container Manager에 빈 PostgreSQL을 만들고 Windows에서 Prisma 마이그레이션을 검증하는 절차입니다. |
 
 현황 문서(<code>09</code>, <code>10</code>)는 특정 시점의 기록이므로 기능 변경 시 함께 갱신해야 합니다.
 
@@ -233,6 +234,13 @@ npm run test:integration
 | <code>prisma/migrations/20260721150000_remove_order_templates/migration.sql</code> | 더 이상 사용하지 않는 주문 세트 품목과 본문 테이블을 제거합니다. |
 | <code>prisma/migrations/20260721160000_add_transfer_movement_type/migration.sql</code> | PostgreSQL 커밋 경계를 지켜 <code>StockMovementType.TRANSFER</code>를 선행 추가합니다. |
 | <code>prisma/migrations/20260721161000_add_warehouse_inventory/migration.sql</code> | 기존 현재고를 완제품 창고로 이관하고 <code>WarehouseStock</code> 단일 수량 원천과 이동 제약·인덱스를 적용합니다. |
+| <code>prisma/migrations/20260721170000_add_order_image/migration.sql</code> | 주문당 하나의 검증된 이미지 원본을 DB에 저장하는 테이블과 제약을 추가합니다. |
+| <code>prisma/migrations/20260721180000_update_client_delivery_fields/migration.sql</code> | 거래처 연락처·주소 필드를 지역·납품 부서 중심 정보로 전환합니다. |
+| <code>prisma/migrations/20260722100000_add_partial_shipment_reorders/migration.sql</code> | 부분 출고 상태와 부족분 자동 재주문 연결을 추가합니다. |
+| <code>prisma/migrations/20260722113000_add_warehouse_master/migration.sql</code> | 창고 enum을 코드 문자열로 전환하고 관리자용 창고 기준정보를 추가합니다. |
+| <code>prisma/migrations/20260722120000_add_warehouse_active/migration.sql</code> | 창고 기준정보에 활성 상태를 추가합니다. |
+| <code>prisma/migrations/20260723133000_add_manual_defect_replacements/migration.sql</code> | 제품 하자 수동 교환의 구분과 사유 제약을 추가합니다. |
+| <code>prisma/migrations/20260723160000_remove_allergen_min_stock/migration.sql</code> | 더 이상 사용하지 않는 시약별 안전재고 필드와 제약을 제거합니다. |
 | <code>prisma/migrations/20260729140000_add_shipment_item_warehouse/migration.sql</code> | 출고 품목에 실제 출고 창고를 저장하고 기존 출고 이력은 완제품 창고로 보존합니다. |
 
 ## <code>src/app/</code> 공통 파일
@@ -243,6 +251,8 @@ npm run test:integration
 |---|---|
 | <code>src/app/actions-framework-error.test.ts</code> | 인증 리다이렉트 같은 Next.js 제어 흐름 오류를 서버 액션들이 일반 오류로 바꾸지 않는지 검증합니다. |
 | <code>src/app/dashboard-data.ts</code> | 대시보드 통계, 확인할 LOT, 주문·이동·선제 교환 현황을 조회하고 허용된 개발 환경에서 샘플 fallback을 제공합니다. |
+| <code>src/app/manifest.ts</code> | 설치 이름·색상·시작 경로와 일반·마스커블 로고 아이콘을 정의하는 PWA 매니페스트입니다. |
+| <code>src/app/pwa-registration.tsx</code> | 운영 빌드에서 서비스 워커를 브라우저에 등록합니다. |
 | <code>src/app/dialog-frame.tsx</code> | 열기·닫기, 배경 클릭과 포커스 동작을 공통화한 모달 프레임입니다. |
 | <code>src/app/error.test.tsx</code> | 앱 루트 세그먼트 오류 화면이 내부 정보를 노출하지 않고 재시도 안내를 제공하는지 검증합니다. |
 | <code>src/app/error.tsx</code> | App Router의 앱 루트 세그먼트 아래에서 발생한 오류를 안내하고 재시도를 제공합니다. |
@@ -305,7 +315,7 @@ npm run test:integration
 
 | 파일 | 역할 |
 |---|---|
-| <code>src/app/allergens/actions.ts</code> | 관리자 권한으로 시약 코드·이름·분류·안전재고를 등록·수정하고 활성 상태를 바꿉니다. |
+| <code>src/app/allergens/actions.ts</code> | 관리자 권한으로 시약 코드·이름·분류를 등록·수정하고 활성 상태를 바꿉니다. |
 | <code>src/app/allergens/allergen-data.ts</code> | 시약을 검색·페이지 조회하고 LOT 수를 집계하며 개발용 샘플 fallback을 처리합니다. |
 | <code>src/app/allergens/page.tsx</code> | <code>/allergens</code> 시약 목록과 관리자용 등록·수정·활성화 UI입니다. |
 
@@ -355,9 +365,9 @@ npm run test:integration
 | 파일 | 역할 |
 |---|---|
 | <code>src/app/lots/actions.ts</code> | 창고별 LOT 재고 추가·차감·폐기와 부분 창고 이동을 검증하고 이력과 함께 처리합니다. |
-| <code>src/app/lots/lot-data.test.ts</code> | 안전재고 교차 비교가 필요한 상태 필터의 DB 조회·페이지 계산을 검증합니다. |
-| <code>src/app/lots/lot-data.ts</code> | <code>WarehouseStock</code> 기준 LOT·창고 검색, 상태 필터, 페이지 조회와 유통기한·안전재고 상태 계산을 수행합니다. |
-| <code>src/app/lots/lot-table-filters.tsx</code> | LOT 검색어와 창고 및 정상·부족·품절·임박·만료 필터를 구성합니다. |
+| <code>src/app/lots/lot-data.test.ts</code> | 수량·유통기한 상태 필터의 DB 조회와 페이지 계산을 검증합니다. |
+| <code>src/app/lots/lot-data.ts</code> | <code>WarehouseStock</code> 기준 LOT·창고 검색, 상태 필터, 페이지 조회와 수량·유통기한 상태 계산을 수행합니다. |
+| <code>src/app/lots/lot-table-filters.tsx</code> | LOT 검색어와 창고 및 정상·품절·임박·만료 필터를 구성합니다. |
 | <code>src/app/lots/page.tsx</code> | <code>/lots</code> 창고별 LOT 현황, 단일 재고 관리 버튼과 현재 조건 내보내기를 제공합니다. |
 | <code>src/app/lots/inventory-management-dialog.tsx</code> | 한 다이얼로그에서 추가·차감·폐기 재고 조정과 부분 창고 이동을 전환하고 처리 전 수량을 확인합니다. |
 | <code>src/app/lots/inventory-management-dialog.test.tsx</code> | 단일 버튼·단일 다이얼로그와 0재고일 때의 이동 제한을 검증합니다. |
@@ -432,7 +442,7 @@ UI와 데이터 영속화 실행에서 분리한 입력 정규화와 핵심 업�
 |---|---|
 | <code>src/domain/export-filters.test.ts</code> | 검색 결합, LOT 상태 경계, KST 날짜 범위와 잘못된 필터 거부를 검증합니다. |
 | <code>src/domain/export-filters.ts</code> | 재고·이동 검색어, 상태·유형·한국 날짜를 검증해 Prisma 조건으로 변환합니다. |
-| <code>src/domain/lot-status.ts</code> | 유통기한·현재 수량·안전재고로 LOT 상태와 표시명을 우선순위대로 판정합니다. |
+| <code>src/domain/lot-status.ts</code> | 유통기한과 현재 수량으로 LOT 상태와 표시명을 우선순위대로 판정합니다. |
 | <code>src/domain/order-items.test.ts</code> | 중복 품목 병합과 빈 시약·잘못된 수량 거부를 검증합니다. |
 | <code>src/domain/order-items.ts</code> | 주문 품목의 시약 ID·양의 정수 수량을 검증하고 같은 품목을 합칩니다. |
 | <code>src/domain/pending-shipment.ts</code> | 출고 대기 주문 상태와 공통 Prisma 조회 조건을 정의합니다. |
@@ -441,8 +451,8 @@ UI와 데이터 영속화 실행에서 분리한 입력 정규화와 핵심 업�
 | <code>src/domain/stock-movement-presentation.test.ts</code> | 모든 이동 유형의 표시명·증감 방향·타입 판별을 검증합니다. |
 | <code>src/domain/stock-movement-presentation.ts</code> | 이동 유형의 화면 표시명과 실제 재고 증감 방향을 제공합니다. |
 | <code>src/domain/stock.test.ts</code> | 유통기한이 빠른 LOT부터 수량을 배정하는 FEFO 예제를 단위 검증합니다. |
-| <code>src/domain/warehouse.test.ts</code> | 고정된 5개 창고 값과 한국어 표시명·타입 판별을 검증합니다. |
-| <code>src/domain/warehouse.ts</code> | 창고 enum 계약, 한국어 표시명과 입력 판별 함수를 제공합니다. |
+| <code>src/domain/warehouse.test.ts</code> | 기본 창고 표시명과 동적 창고 코드 판별을 검증합니다. |
+| <code>src/domain/warehouse.ts</code> | 기본 창고 표시명과 동적 창고 코드 입력 판별 함수를 제공합니다. |
 
 ## <code>src/lib/</code>
 
@@ -487,7 +497,6 @@ UI와 데이터 영속화 실행에서 분리한 입력 정규화와 핵심 업�
 | <code>src/services/order-service.ts</code> | 미출고 주문만 동시성에 안전하게 취소하고 감사 로그를 남깁니다. |
 | <code>src/services/replacement-service.ts</code> | 교환 확정·제외와 정책 기반 FEFO 교환 출고 완료·감사를 처리합니다. |
 | <code>src/services/shipment-service.ts</code> | FEFO/지정 LOT 출고와 재고·이동·감사 생성, 출고 취소·재고 복구를 처리합니다. |
-| <code>src/services/status-filtered-lot-query.ts</code> | 안전재고 교차 비교가 필요한 정상·부족 LOT를 PostgreSQL에서 집계·페이지 조회합니다. |
 | <code>src/services/stock-service.ts</code> | 창고 잔액의 조건부 증감과 이동 기록을 원자 처리해 음수 재고·동시성 충돌을 막습니다. |
 | <code>src/services/warehouse-transfer-service.test.ts</code> | 부분 이동, 입력·잔액 오류, 비교·갱신 충돌 재시도와 이력 중복 방지를 검증합니다. |
 | <code>src/services/warehouse-transfer-service.ts</code> | 출발 잔액 차감, 도착 잔액 증가, <code>TRANSFER</code>와 <code>STOCK_TRANSFER</code> 감사를 Serializable 트랜잭션으로 처리합니다. |
@@ -500,6 +509,12 @@ UI와 데이터 영속화 실행에서 분리한 입력 정규화와 핵심 업�
 | <code>src/test/setup.ts</code> | 플래시 메시지 모듈을 공통 mock해 쿠키 부작용 없이 서버 동작을 테스트하도록 설정합니다. |
 
 <code>*.test.ts</code>와 <code>*.test.tsx</code>는 외부 서비스 없이 실행하는 단위·정책·컴포넌트 테스트입니다. <code>*.integration.test.ts</code>는 실제 PostgreSQL 트랜잭션을 사용하므로 전용 테스트 DB가 필요합니다.
+
+## PWA 설치
+
+운영 빌드를 HTTPS로 제공하거나 로컬의 `localhost`에서 열면 Chrome 또는 Edge의 주소창 설치 버튼으로 앱을 설치할 수 있습니다. 설치 후 바탕화면과 시작 메뉴에는 `public/logo.png`를 흰색 정사각형에 배치한 아이콘이 사용되며 앱은 독립 창으로 실행됩니다.
+
+서비스 워커는 인증 화면, 업무 페이지, API 응답을 캐시하지 않습니다. 로고와 Next.js 정적 자산만 캐시하고, 네트워크 연결 실패 시 읽기 전용 안내 화면을 표시하므로 업무 데이터의 오프라인 입력·저장은 지원하지 않습니다.
 
 ## 로컬·자동 생성 항목
 

@@ -67,15 +67,28 @@ LOT는 다음 값의 조합으로 식별한다.
 
 동일 LOT은 여러 창고에 나뉘어 보관할 수 있지만 `(reagentLotId, warehouse)` 행은 하나만 존재한다. 수량이 0이 된 행도 이력과 조회의 일관성을 위해 유지할 수 있다.
 
+### 2.4.1 창고 기준정보 Warehouse
+
+| 필드 | 설명 |
+|---|---|
+| id | 창고 ID |
+| code | 재고·이력에 저장되는 고유 창고 코드 |
+| name | 화면에 표시하는 고유 창고명 |
+| isActive | 신규 입고·조정·이동·출고 선택 가능 여부 |
+| createdAt | 생성일시 |
+| updatedAt | 수정일시 |
+
+재고와 이력 테이블의 창고 필드는 기존 기록을 안정적으로 보존하기 위해 코드 문자열을 저장한다. 애플리케이션의 신규 쓰기는 활성 창고 기준정보를 검사한다.
+
 ### 2.5 거래처 Client
 
 | 필드 | 설명 |
 |---|---|
 | id | 거래처 ID |
 | name | 거래처명 |
+| region | 지역 |
 | managerName | 담당자명 |
-| phone | 연락처 |
-| address | 주소 |
+| deliveryDepartment | 납품 부서 |
 | memo | 메모 |
 | isActive | 사용 여부 |
 | createdAt | 생성일시 |
@@ -203,7 +216,9 @@ LOT는 다음 값의 조합으로 식별한다.
 | REVERSE | 취소/복구 |
 | TRANSFER | 창고 간 이동. 전체 수량 증감은 0 |
 
-### 창고
+### 기본 창고 코드
+
+창고는 enum이 아니라 `Warehouse` 기준정보로 관리한다. 아래 다섯 행은 초기 마이그레이션이 만드는 기본값이며, 관리자는 규칙에 맞는 코드를 추가하고 완제품 외 창고를 비활성화할 수 있다.
 
 | 값 | 설명 |
 |---|---|
@@ -225,6 +240,8 @@ LOT는 다음 값의 조합으로 식별한다.
 | ReagentLot unique | allergenId + lotNo + expirationDate 중복 불가 |
 | WarehouseStock primary key | reagentLotId + warehouse 중복 불가 |
 | WarehouseStock.quantity >= 0 | 창고별 재고 음수 불가 |
+| Warehouse.code unique | 창고 코드 중복 불가 |
+| Warehouse.name unique | 창고명 중복 불가 |
 | TRANSFER shape | 양의 수량, 서로 다른 출발·도착 창고 필수 |
 | non-TRANSFER destination | `TRANSFER` 외 이력의 destinationWarehouse는 null |
 

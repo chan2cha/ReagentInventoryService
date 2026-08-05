@@ -1,6 +1,6 @@
 # Current Implementation Status
 
-Last updated: 2026-07-21
+Last updated: 2026-08-05
 
 ## Summary
 
@@ -21,7 +21,7 @@ The main operational workflow is implemented end to end:
 10. Enforce role checks on write operations.
 11. Manage internal users from an administrator-only screen.
 12. Require newly registered users to change their temporary password.
-13. Track reagent-specific minimum stock and flag low-stock lots.
+13. Classify warehouse balances as normal, out of stock, expiring, or expired from quantity and expiration date.
 14. Manage reagent and client master data from administrator screens.
 15. Confirm high-impact operations, prevent duplicate submission, and show completion feedback.
 16. Record critical administrator, cancellation, and data-export activity in an administrator-only audit log.
@@ -37,6 +37,7 @@ The main operational workflow is implemented end to end:
 26. Detect expiry-driven proactive replacement candidates from original shipment LOTs, confirm client remaining quantity, ship eligible replacement LOTs, and record return disposition and audit history.
 27. Keep authoritative balances in `WarehouseStock` for finished goods, samples, returns, nonconforming goods, and disposal, and transfer partial quantities atomically between them.
 28. Register orders through searchable client/reagent controls and optionally store one validated, authenticated 3 MiB JPEG/PNG/WebP attachment in the same transaction.
+29. Install the production site as a standalone PWA with logo-based desktop icons and a non-data-caching offline notice.
 
 List pagination uses 20 rows per page and URL query parameters. Audit, movements, orders, lots, clients, allergens, and users use `page`; shipments preserve independent `ordersPage` and `historyPage` values for the two lists on the same screen.
 
@@ -74,9 +75,15 @@ User-facing labels have been revised to use operator-friendly terms:
 
 The application uses Prisma with:
 
-- `DATABASE_URL`
-- `DIRECT_URL`
+- `DATABASE_URL` for the runtime PostgreSQL connection
+- `DIRECT_URL` for Prisma migrations and seed operations
+- `AUTH_SECRET` for signed sessions
+- `AUTH_URL` as the configured service URL
+- `APP_ENV` for environment-sensitive security and seed guards
 - `ALLOW_SAMPLE_DATA` (development-only opt-in; keep `false` in production)
+- `TEST_DATABASE_URL` only for the isolated PostgreSQL integration suite
+
+Copy `.env.example` to `.env` for local development and replace every placeholder. The Compose/NAS and database-copy workflows use their separate `.env.nas.example` and `.env.db.example` templates.
 
 Important Supabase note:
 
@@ -105,7 +112,7 @@ Authenticated screens use the official company logo in a white sidebar, Shinyoun
 | `/shipments` | Implemented | Ships orders, shows recent shipments, supports shipment cancellation. |
 | `/replacements` | Implemented | `ADMIN`/`SHIPMENT_MANAGER` proactive replacement candidate review, exclusion, confirmation, FEFO replacement shipment, and return disposition; `ADMIN` can manage notification and replacement shelf-life thresholds. |
 | `/clients` | Implemented | DB-backed client registration, editing, and activation management. |
-| `/allergens` | Implemented | DB-backed reagent registration, editing, minimum stock, and activation management. |
+| `/allergens` | Implemented | DB-backed reagent registration, editing, and activation management. |
 | `/movements` | Implemented | DB-backed stock movement history. |
 | `/exports` | Implemented | `ADMIN`/`ORDER_MANAGER`/`SHIPMENT_MANAGER` individual and selected combined XLSX exports. |
 | `/users` | Implemented | Administrator-only user list, registration, activation, and deactivation. |
@@ -299,13 +306,13 @@ Behavior:
 - Allows `ADMIN` and `SHIPMENT_MANAGER` users to adjust a selected LOT and warehouse balance from `/lots`.
 - Opens a row-specific adjustment dialog with explicit add, subtract, and disposal operations.
 - Accepts positive quantities only and previews the resulting stock before submission.
-- Warns when the result falls below minimum stock and blocks changes that would make stock negative.
+- Blocks changes that would make the selected warehouse balance negative.
 - Requires a reason.
 - Uses conditional atomic increments/decrements on `WarehouseStock.quantity` and blocks changes that would make that warehouse balance negative, including concurrent changes.
 - Creates `StockMovement` with type `ADJUST` or `DISPOSE`.
 - Revalidates dashboard, stock, and movement pages.
 
-### Minimum Stock Monitoring
+### Stock Status Monitoring
 
 Files:
 
@@ -316,10 +323,10 @@ Files:
 
 Behavior:
 
-- Stores a reagent-specific minimum stock value in `Allergen.minStock`.
-- Seeds minimum stock values for the sample reagents.
-- Marks finished-goods stock entries below the configured threshold as `재고부족`.
-- Calculates the dashboard low-stock count from finished-goods balances, excluding non-shippable warehouses.
+- `Allergen.minStock` was removed by `20260723160000_remove_allergen_min_stock` and is not part of the current schema or reagent UI.
+- Classifies each warehouse balance as `정상`, `품절`, `유통기한 임박`, or `유통기한 만료` from `WarehouseStock.quantity` and the LOT expiration date.
+- Uses a 30-day inclusive threshold for the expiring status and treats zero quantity as out of stock.
+- Calculates the dashboard expiring count and priority list from finished-goods balances.
 
 ### Reagent and Client Management
 
@@ -336,7 +343,7 @@ Behavior:
 - Allows administrators to activate or deactivate master data without deleting history.
 - Normalizes reagent codes to uppercase and rejects duplicate codes case-insensitively.
 - Rejects duplicate client names case-insensitively.
-- Lets administrators configure reagent minimum stock from the reagent screen.
+- Keeps reagent master data limited to code, name, category, and active state.
 - Keeps both screens read-only for non-administrator users.
 - Revalidates dependent receiving, ordering, stock, and dashboard screens after changes.
 
@@ -436,12 +443,20 @@ Migrations:
 - `prisma/migrations/20260721150000_remove_order_templates/migration.sql`
 - `prisma/migrations/20260721160000_add_transfer_movement_type/migration.sql`
 - `prisma/migrations/20260721161000_add_warehouse_inventory/migration.sql`
+- `prisma/migrations/20260721170000_add_order_image/migration.sql`
+- `prisma/migrations/20260721180000_update_client_delivery_fields/migration.sql`
+- `prisma/migrations/20260722100000_add_partial_shipment_reorders/migration.sql`
+- `prisma/migrations/20260722113000_add_warehouse_master/migration.sql`
+- `prisma/migrations/20260722120000_add_warehouse_active/migration.sql`
+- `prisma/migrations/20260723133000_add_manual_defect_replacements/migration.sql`
+- `prisma/migrations/20260723160000_remove_allergen_min_stock/migration.sql`
 - `prisma/migrations/20260729140000_add_shipment_item_warehouse/migration.sql`
 - Operations guide: `docs/11_database_migrations.md`
 - The existing Supabase schema was registered with `20260710000000_baseline`. On 2026-07-12 the operational database passed the P0 preflight and applied both forward migrations through `20260712150000_add_order_templates`; that applied migration remains in source history and must not be deleted or rewritten. On 2026-07-13 it also applied the session-version and proactive-replacement migrations.
 - The P0 invariant migration adds quantity/date CHECK constraints, duplicate-order-item protection, one active shipment per order, and foreign-key traversal indexes. Run its documented preflight before deployment.
 - `20260721150000_remove_order_templates` is the forward removal: it drops the retired child and parent tables without rewriting migration history. Existing generic `AuditLog` rows remain as historical records because they do not use foreign keys to those tables.
 - `20260721160000_add_transfer_movement_type` commits the PostgreSQL enum value separately; `20260721161000_add_warehouse_inventory` backfills every legacy quantity into `FINISHED_GOODS`, verifies the copy, removes `ReagentLot.currentQuantity`, and applies warehouse and transfer CHECK constraints.
+- Later migrations replace the warehouse enum with an administrator-maintained `Warehouse` master, add warehouse activation, partial-shipment reorders, manual defect replacements, remove the retired `Allergen.minStock`, and persist the source warehouse on every shipment item.
 
 Seed currently creates:
 
@@ -474,7 +489,7 @@ For Supabase session pooler use during seed in this workspace, commands were run
 
 ## Validation
 
-The following checks passed after the latest implementation updates:
+The following source-only checks passed on 2026-08-05:
 
 ```bash
 npm run prisma:validate
@@ -483,9 +498,9 @@ npm run typecheck
 npm run lint
 npm run build
 npm test
-npm run prisma:migrate:status
-npm run test:integration
 ```
+
+`npm run prisma:migrate:status` and `npm run test:integration` remain required per target environment because they connect to and, for integration tests, modify an explicitly isolated PostgreSQL database.
 
 Date handling is centralized in `src/lib/date.ts`. Korean midnight boundaries, date-only expiration comparisons, and UTC query ranges are covered by automated tests.
 

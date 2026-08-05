@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#006bb6">
+    <title>연결할 수 없음 · 시약 재고 관리</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; color: #172033; background: #f3f7fa; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+      main { width: min(100%, 440px); padding: 40px; border: 1px solid #dce6ed; background: #fff; text-align: center; box-shadow: 0 16px 40px rgba(21, 53, 75, .08); }
+      img { width: min(206px, 80%); height: auto; margin-bottom: 28px; }
+      h1 { margin: 0 0 12px; font-size: 24px; }
+      p { margin: 0 0 24px; color: #526575; line-height: 1.65; }
+      button { min-height: 44px; padding: 0 22px; border: 0; border-radius: 3px; color: #fff; background: #006bb6; font: inherit; font-weight: 700; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/logo.png" alt="신영로파마">
+      <h1>서버에 연결할 수 없습니다</h1>
+      <p>네트워크 연결과 서버 상태를 확인한 뒤 다시 시도하세요. 업무 데이터는 오프라인으로 저장되지 않습니다.</p>
+      <button type="button" onclick="location.reload()">다시 시도</button>
+    </main>
+  </body>
+</html>

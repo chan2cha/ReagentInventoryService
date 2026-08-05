@@ -1,6 +1,6 @@
 # Remaining Work and Improvements
 
-Last updated: 2026-07-21
+Last updated: 2026-08-05
 
 ## Priority 1: Authentication and Access Control
 
@@ -83,7 +83,7 @@ Current state:
 - `/lots` supports LOT-and-warehouse-level stock adjustment.
 - `ADMIN` and `SHIPMENT_MANAGER` users can adjust stock.
 - A row-specific dialog separates add, subtract, and disposal operations and accepts positive quantities only.
-- The dialog previews resulting stock, warns below minimum stock, and blocks negative results.
+- The dialog previews resulting stock and blocks negative results.
 - A reason is required.
 - Negative resulting stock is blocked.
 - Stock changes use conditional atomic increments/decrements inside retryable serializable transactions.
@@ -102,7 +102,7 @@ Implemented:
 
 Current state:
 
-- Five fixed warehouses are supported: finished goods, samples, returns, nonconforming goods, and disposal.
+- Five default warehouses are seeded: finished goods, samples, returns, nonconforming goods, and disposal. Administrators can add warehouses and activate or deactivate them; finished goods cannot be deactivated.
 - `WarehouseStock` keyed by `(reagentLotId, warehouse)` is the single source of mutable inventory quantity; `ReagentLot.currentQuantity` has been removed.
 - `/lots` shows and filters the warehouse column and allows `ADMIN` and `SHIPMENT_MANAGER` to transfer part of a balance with a required reason.
 - Source decrement, destination upsert, one `TRANSFER` movement, and one `STOCK_TRANSFER` audit log are atomic in a retryable Serializable transaction.
@@ -135,7 +135,7 @@ Current state:
 - Administrators can register and edit reagents and clients.
 - Administrators can deactivate or reactivate both data types.
 - Reagent code and client name duplicate checks are applied case-insensitively.
-- Reagent minimum stock can be maintained from `/allergens`.
+- Reagent code, name, category, and active state can be maintained from `/allergens`.
 - Non-administrator users retain read-only access.
 
 ## Completed: Date Handling
@@ -149,15 +149,14 @@ Current state:
 - Inbound registration defaults to the current Korean date.
 - Korean midnight boundaries and date-only comparisons have automated tests.
 
-## Completed: Safety Stock
+## Completed: Stock Status Simplification
 
 Current state:
 
-- Prisma `Allergen` stores `minStock Int @default(0)`.
-- Seed data defines a minimum stock value for each sample reagent.
-- `/lots` marks entries below the reagent threshold as `재고부족`.
-- `/allergens` reads the minimum stock value from the database.
-- The dashboard calculates low-stock entries from finished-goods `WarehouseStock.quantity < minStock`.
+- Migration `20260723160000_remove_allergen_min_stock` removed `Allergen.minStock` and its database constraint.
+- `/allergens` no longer reads or edits a safety-stock value.
+- `/lots` derives `정상`, `품절`, `유통기한 임박`, and `유통기한 만료` from the warehouse quantity and expiration date.
+- The dashboard reports expiring finished-goods LOTs instead of a minimum-stock shortage count.
 
 ## Completed: Confirmation and Error UX
 
@@ -217,8 +216,7 @@ Current state:
 
 Remaining tasks:
 
-- Update `.env.example` with Supabase session pooler guidance.
-- Add deployment guide for Vercel or chosen host.
+- Add deployment guide for Vercel or the chosen non-Compose host.
 - Ensure `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `AUTH_URL`, and the explicitly verified seed target (when seeding) are configured.
 
 ## Completed: Database Failure Handling
