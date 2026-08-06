@@ -44,7 +44,7 @@
   },
   "overrides": {
     "exceljs": {
-      "archiver": "8.0.0",
+      "archiver": "7.0.1",
       "fast-csv": "5.0.7",
       "unzipper": "0.12.5",
       "uuid": "11.1.1"
